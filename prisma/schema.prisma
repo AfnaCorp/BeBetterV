@@ -1,0 +1,157 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String             @id
+  name              String
+  email             String             @unique
+  createdAt         DateTime           @default(now())
+  athleteProfile    AthleteProfile?
+  workouts          Workout[]
+  readinessEntries  ReadinessEntry[]
+  personalRecords   PersonalRecord[]
+  agentInsights     AgentInsight[]
+  chatMessages      ChatMessage[]
+  weeklyReviews     WeeklyReview[]
+}
+
+model AthleteProfile {
+  id                String   @id
+  userId            String   @unique
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  age               Int
+  height            Float
+  weight            Float
+  sex               String?
+  level             String
+  mainGoal          String
+  trainingFrequency Int
+  preferredDays     String[]
+  sessionDuration   Int
+  equipment         String[]
+  injuries          String[]
+  priorityMuscles   String[]
+  avoidedExercises  String[]
+}
+
+model Workout {
+  id         String            @id
+  userId     String
+  user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date       DateTime
+  title      String
+  type       String
+  duration   Int
+  energy     Int
+  motivation Int
+  sleep      Int
+  soreness   Int
+  stress     Int
+  notes      String?
+  createdAt  DateTime          @default(now())
+  exercises  WorkoutExercise[]
+}
+
+model WorkoutExercise {
+  id         String   @id
+  workoutId  String
+  workout    Workout  @relation(fields: [workoutId], references: [id], onDelete: Cascade)
+  exerciseId String
+  exercise   Exercise @relation(fields: [exerciseId], references: [id])
+  order      Int
+  notes      String?
+  sets       Set[]
+}
+
+model Set {
+  id                String          @id
+  workoutExerciseId String
+  workoutExercise   WorkoutExercise @relation(fields: [workoutExerciseId], references: [id], onDelete: Cascade)
+  setNumber         Int
+  reps              Int
+  weight            Float
+  rpe               Float
+  restSeconds       Int
+  completed         Boolean         @default(true)
+}
+
+model Exercise {
+  id               String            @id
+  name             String
+  primaryMuscle    String
+  secondaryMuscles String[]
+  type             String
+  equipment        String[]
+  difficulty       String
+  instructions     String
+  commonMistakes   String[]
+  alternatives     String[]
+  workoutExercises WorkoutExercise[]
+  personalRecords  PersonalRecord[]
+}
+
+model ReadinessEntry {
+  id         String   @id
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date       DateTime
+  sleep      Int
+  energy     Int
+  soreness   Int
+  stress     Int
+  motivation Int
+  score      Int
+  notes      String?
+}
+
+model PersonalRecord {
+  id         String   @id
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exerciseId String
+  exercise   Exercise @relation(fields: [exerciseId], references: [id])
+  type       String
+  value      Float
+  date       DateTime
+}
+
+model AgentInsight {
+  id             String   @id
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type           String
+  priority       String
+  title          String
+  message        String
+  recommendation String
+  createdAt      DateTime @default(now())
+  status         String
+}
+
+model ChatMessage {
+  id        String   @id
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      String
+  content   String
+  createdAt DateTime @default(now())
+}
+
+model WeeklyReview {
+  id              String   @id
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  weekStart       DateTime
+  weekEnd         DateTime
+  summary         String
+  wins            String[]
+  risks           String[]
+  recommendations String[]
+  createdAt       DateTime @default(now())
+}
