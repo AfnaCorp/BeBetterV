@@ -23,15 +23,35 @@ const config: Config = {
         "primary-foreground": "hsl(var(--primary-foreground))",
         accent: "hsl(var(--accent))",
         "accent-foreground": "hsl(var(--accent-foreground))",
+        "accent-from": "hsl(var(--accent-from))",
+        "accent-to": "hsl(var(--accent-to))",
         warning: "hsl(var(--warning))",
-        danger: "hsl(var(--danger))"
+        danger: "hsl(var(--danger))",
+        space: {
+          50: "hsl(var(--space-50))",
+          100: "hsl(var(--space-100))",
+          200: "hsl(var(--space-200))",
+          300: "hsl(var(--space-300))",
+          400: "hsl(var(--space-400))",
+          500: "hsl(var(--space-500))",
+          600: "hsl(var(--space-600))",
+          700: "hsl(var(--space-700))",
+          800: "hsl(var(--space-800))",
+          900: "hsl(var(--space-900))",
+          950: "hsl(var(--space-950))"
+        }
       },
       fontFamily: {
         sans: ["var(--font-geist-sans)", "Inter", "system-ui", "sans-serif"]
       },
       boxShadow: {
-        glow: "0 0 60px rgba(34, 197, 94, 0.16)",
-        panel: "0 24px 80px rgba(0, 0, 0, 0.24)"
+        glow: "0 12px 36px hsla(var(--accent-to), 0.30)",
+        panel: "var(--neu-shadow-out)",
+        "panel-sm": "var(--neu-shadow-out-sm)",
+        "panel-inset": "var(--neu-shadow-in)"
+      },
+      backgroundImage: {
+        "accent-gradient": "var(--accent-gradient)"
       },
       borderRadius: {
         xl: "1rem",

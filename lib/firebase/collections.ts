@@ -1,0 +1,12 @@
+export const COLLECTIONS = {
+  weights: "weights",
+  sleep: "sleep",
+  meals: "meals",
+  sessions: "sessions",
+  dayLogs: "dayLogs",
+  habits: "habits",
+  facts: "facts",
+  messages: "messages"
+} as const;
+
+export type CollectionName = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];

@@ -7,8 +7,8 @@ const variants: Record<BadgeVariant, string> = {
   default: "bg-primary/10 text-primary border-primary/20",
   success: "bg-primary/10 text-primary border-primary/20",
   warning: "bg-warning/15 text-warning border-warning/25",
-  danger: "bg-danger/15 text-red-300 border-danger/25",
-  blue: "bg-accent/15 text-sky-300 border-accent/25",
+  danger: "bg-danger/15 text-danger border-danger/25",
+  blue: "bg-accent/15 text-accent border-accent/25",
   muted: "bg-muted text-muted-foreground border-border"
 };
 

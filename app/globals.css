@@ -3,21 +3,56 @@
 @tailwind utilities;
 
 :root {
-  --background: 220 18% 6%;
-  --foreground: 210 24% 96%;
-  --card: 220 16% 10%;
-  --card-foreground: 210 24% 96%;
-  --muted: 220 13% 16%;
-  --muted-foreground: 215 12% 68%;
-  --border: 218 13% 20%;
-  --input: 218 13% 20%;
-  --ring: 158 72% 48%;
-  --primary: 158 72% 48%;
-  --primary-foreground: 164 100% 8%;
-  --accent: 204 100% 58%;
-  --accent-foreground: 210 24% 96%;
-  --warning: 31 95% 55%;
-  --danger: 0 76% 62%;
+  /* Light neumorphic palette */
+  --background: 230 30% 96%;
+  --foreground: 240 22% 16%;
+  --card: 0 0% 100%;
+  --card-foreground: 240 22% 16%;
+  --muted: 230 24% 92%;
+  --muted-foreground: 235 12% 46%;
+  --border: 230 22% 88%;
+  --input: 230 22% 88%;
+  --ring: 258 90% 66%;
+
+  /* Primary = violet (CTA, links, active states) */
+  --primary: 258 90% 66%;
+  --primary-foreground: 0 0% 100%;
+
+  /* Accent gradient endpoints: orange -> violet */
+  --accent: 258 90% 66%;
+  --accent-foreground: 0 0% 100%;
+  --accent-from: 22 100% 64%;
+  --accent-to: 282 80% 66%;
+  --accent-gradient: linear-gradient(135deg, hsl(var(--accent-from)) 0%, hsl(var(--accent-to)) 100%);
+
+  --warning: 30 95% 58%;
+  --danger: 0 78% 60%;
+
+  /* Sidereal scale stays neutral so existing space-* references degrade well in light theme */
+  --space-50: 230 30% 98%;
+  --space-100: 230 26% 95%;
+  --space-200: 230 22% 90%;
+  --space-300: 230 16% 80%;
+  --space-400: 232 12% 64%;
+  --space-500: 234 10% 48%;
+  --space-600: 236 14% 34%;
+  --space-700: 238 18% 22%;
+  --space-800: 240 20% 16%;
+  --space-900: 240 22% 12%;
+  --space-950: 240 24% 8%;
+
+  /* Neumorphic shadow vars: tweak in one place to retune the whole UI */
+  --neu-light: 0 0% 100%;
+  --neu-dark: 230 30% 80%;
+  --neu-shadow-out:
+    -8px -8px 18px hsla(var(--neu-light), 0.95),
+    10px 10px 24px hsla(var(--neu-dark), 0.45);
+  --neu-shadow-out-sm:
+    -4px -4px 10px hsla(var(--neu-light), 0.9),
+    6px 6px 14px hsla(var(--neu-dark), 0.4);
+  --neu-shadow-in:
+    inset 4px 4px 10px hsla(var(--neu-dark), 0.4),
+    inset -4px -4px 10px hsla(var(--neu-light), 0.9);
 }
 
 * {
@@ -32,8 +67,8 @@ body {
   margin: 0;
   min-height: 100vh;
   background:
-    radial-gradient(circle at 24% 0%, rgba(34, 197, 94, 0.16), transparent 32%),
-    radial-gradient(circle at 90% 8%, rgba(14, 165, 233, 0.14), transparent 30%),
+    radial-gradient(circle at 12% 0%, hsla(var(--accent-from), 0.10), transparent 38%),
+    radial-gradient(circle at 92% 8%, hsla(var(--accent-to), 0.10), transparent 36%),
     hsl(var(--background));
   color: hsl(var(--foreground));
   font-feature-settings: "ss01", "ss02", "cv01", "cv03";
@@ -55,20 +90,62 @@ select {
   background: hsla(var(--primary), 0.25);
 }
 
-.glass-panel {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.026));
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  box-shadow: 0 20px 70px rgba(0, 0, 0, 0.24);
-  backdrop-filter: blur(18px);
-}
-
-.dashboard-grid {
-  background-image:
-    linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
-  background-size: 44px 44px;
-}
-
 .recharts-wrapper text {
   fill: hsl(var(--muted-foreground));
+}
+
+/* --------------------------------------------------------------------- */
+/* Neumorphic utility primitives — use these everywhere instead of
+   hardcoding shadows / gradients. Tweak the --neu-* vars to retune. */
+/* --------------------------------------------------------------------- */
+
+.neu-surface {
+  background: hsl(var(--card));
+  border-radius: 1.5rem;
+  box-shadow: var(--neu-shadow-out);
+}
+
+.neu-surface-sm {
+  background: hsl(var(--card));
+  border-radius: 1.25rem;
+  box-shadow: var(--neu-shadow-out-sm);
+}
+
+.neu-inset {
+  background: hsl(var(--background));
+  border-radius: 1.25rem;
+  box-shadow: var(--neu-shadow-in);
+}
+
+.neu-pressable {
+  background: hsl(var(--card));
+  box-shadow: var(--neu-shadow-out-sm);
+  transition: box-shadow 180ms ease, transform 180ms ease;
+}
+.neu-pressable:hover {
+  box-shadow:
+    -6px -6px 14px hsla(var(--neu-light), 0.95),
+    8px 8px 18px hsla(var(--neu-dark), 0.45);
+}
+.neu-pressable:active {
+  box-shadow: var(--neu-shadow-in);
+  transform: translateY(1px);
+}
+
+.gradient-accent {
+  background: var(--accent-gradient);
+}
+
+.gradient-accent-text {
+  background: var(--accent-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.gradient-accent-ring {
+  background:
+    linear-gradient(hsl(var(--card)), hsl(var(--card))) padding-box,
+    var(--accent-gradient) border-box;
+  border: 2px solid transparent;
 }
