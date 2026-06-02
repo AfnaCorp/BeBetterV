@@ -1,10 +1,24 @@
+"use client";
+
+import { motion, useReducedMotion } from "framer-motion";
 import type { ChatMessage } from "@/types";
 import { cn } from "@/lib/utils/cn";
 
 export function MessageBubble({ message }: { message: ChatMessage }) {
   const isUser = message.role === "user";
+  const reduce = useReducedMotion();
   return (
-    <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
+    <motion.div
+      layout
+      initial={
+        reduce
+          ? { opacity: 0 }
+          : { opacity: 0, y: 12, scale: 0.96 }
+      }
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ type: "spring", stiffness: 380, damping: 30 }}
+      className={cn("flex", isUser ? "justify-end" : "justify-start")}
+    >
       <div
         className={cn(
           "max-w-[88%] whitespace-pre-line rounded-2xl px-4 py-3 text-sm leading-6 md:max-w-[74%]",
@@ -23,6 +37,6 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
           </div>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 }

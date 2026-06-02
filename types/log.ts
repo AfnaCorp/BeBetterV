@@ -40,6 +40,7 @@ export interface SessionEntry extends BaseEntry {
   durationMin?: number;
   exercises: SessionExercise[];
   notes?: string;
+  programSessionId?: string;
 }
 
 export interface HabitEntry extends BaseEntry {

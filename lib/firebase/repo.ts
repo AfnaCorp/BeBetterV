@@ -2,6 +2,7 @@ import {
   addDoc,
   collection,
   deleteDoc,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -95,6 +96,16 @@ export async function updateEntry(
 
 export async function deleteEntry(uid: string, name: string, id: string): Promise<void> {
   await deleteDoc(userDoc(uid, name, id));
+}
+
+/** Supprime un champ précis d'un document (sentinel Firestore `deleteField`). */
+export async function clearField(
+  uid: string,
+  name: string,
+  id: string,
+  field: string
+): Promise<void> {
+  await updateDoc(userDoc(uid, name, id), { [field]: deleteField(), updatedAt: serverTimestamp() });
 }
 
 export const orderByDateDesc = orderBy("date", "desc");

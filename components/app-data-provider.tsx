@@ -4,13 +4,14 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { limit, orderBy } from "firebase/firestore";
 import { useAuth } from "@/components/auth-provider";
 import { COLLECTIONS } from "@/lib/firebase/collections";
-import { createEntry, deleteEntry, subscribe, updateEntry, writeProfile } from "@/lib/firebase/repo";
+import { clearField, createEntry, deleteEntry, subscribe, updateEntry, writeProfile } from "@/lib/firebase/repo";
 import type {
   ChatMessage,
   DayLog,
   HabitEntry,
   MealEntry,
   MemoryFact,
+  ProgramTemplate,
   SessionEntry,
   SleepEntry,
   UserProfile,
@@ -28,6 +29,7 @@ interface AppDataContextValue {
   habits: HabitEntry[];
   facts: MemoryFact[];
   messages: ChatMessage[];
+  programs: ProgramTemplate[];
 
   saveProfile: (patch: Partial<UserProfile>) => Promise<void>;
   addWeight: (entry: Omit<WeightEntry, "id" | "createdAt">) => Promise<string>;
@@ -42,6 +44,10 @@ interface AppDataContextValue {
   updateFact: (id: string, patch: Partial<MemoryFact>) => Promise<void>;
   removeFact: (id: string) => Promise<void>;
   appendMessage: (msg: Omit<ChatMessage, "id" | "createdAt">) => Promise<string>;
+  addProgram: (program: Omit<ProgramTemplate, "id" | "createdAt">) => Promise<string>;
+  updateProgram: (id: string, patch: Partial<Omit<ProgramTemplate, "id" | "createdAt">>) => Promise<void>;
+  clearProgramDraft: (id: string) => Promise<void>;
+  removeProgram: (id: string) => Promise<void>;
 }
 
 const AppDataContext = createContext<AppDataContextValue | null>(null);
@@ -59,6 +65,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
   const [habits, setHabits] = useState<HabitEntry[]>([]);
   const [facts, setFacts] = useState<MemoryFact[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [programs, setPrograms] = useState<ProgramTemplate[]>([]);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -72,6 +79,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       setHabits([]);
       setFacts([]);
       setMessages([]);
+      setPrograms([]);
       setReady(false);
       return;
     }
@@ -91,7 +99,8 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         undefined,
         orderBy("createdAt", "asc"),
         limit(200)
-      )
+      ),
+      subscribe<ProgramTemplate>(uid, COLLECTIONS.programs, setPrograms, undefined, orderBy("createdAt", "desc"))
     ];
 
     setReady(true);
@@ -115,6 +124,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       habits,
       facts,
       messages,
+      programs,
       saveProfile: async (patch) => {
         const id = requireUid();
         await writeProfile(id, patch);
@@ -139,9 +149,15 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         createEntry(requireUid(), COLLECTIONS.facts, { ...fact, lastSeenAt: new Date().toISOString() }),
       updateFact: (id, patch) => updateEntry(requireUid(), COLLECTIONS.facts, id, patch),
       removeFact: (id) => deleteEntry(requireUid(), COLLECTIONS.facts, id),
-      appendMessage: (msg) => createEntry(requireUid(), COLLECTIONS.messages, msg)
+      appendMessage: (msg) => createEntry(requireUid(), COLLECTIONS.messages, msg),
+      addProgram: (program) =>
+        createEntry(requireUid(), COLLECTIONS.programs, program),
+      updateProgram: (id, patch) =>
+        updateEntry(requireUid(), COLLECTIONS.programs, id, patch),
+      clearProgramDraft: (id) => clearField(requireUid(), COLLECTIONS.programs, id, "draft"),
+      removeProgram: (id) => deleteEntry(requireUid(), COLLECTIONS.programs, id)
     };
-  }, [uid, ready, profile, weights, sleep, meals, sessions, dayLogs, habits, facts, messages]);
+  }, [uid, ready, profile, weights, sleep, meals, sessions, dayLogs, habits, facts, messages, programs]);
 
   return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>;
 }

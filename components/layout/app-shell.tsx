@@ -7,6 +7,7 @@ import { useAuth } from "@/components/auth-provider";
 import { Button } from "@/components/ui/button";
 import { Sidebar } from "./sidebar";
 import { MobileNav } from "./mobile-nav";
+import { PageTransition } from "./page-transition";
 import { FloatingCoach } from "@/components/coach/floating-coach";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -69,7 +70,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           </div>
         </header>
-        <main className="mx-auto max-w-5xl px-4 pb-10 sm:px-6 lg:px-8">{children}</main>
+        <main className="mx-auto max-w-5xl px-4 pb-10 sm:px-6 lg:px-8">
+          <PageTransition>{children}</PageTransition>
+        </main>
       </div>
       <MobileNav />
       <FloatingCoach />

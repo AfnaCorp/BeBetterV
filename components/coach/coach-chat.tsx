@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { motion } from "framer-motion";
 import { Send } from "lucide-react";
 import { useAppData } from "@/components/app-data-provider";
 import { useAuth } from "@/components/auth-provider";
@@ -145,7 +146,7 @@ export function CoachChat({ variant = "page" }: { variant?: "page" | "floating" 
                 <div className="text-sm">
                   <p className="font-medium text-foreground">Je remplis ton journal pour toi</p>
                   <p className="mt-0.5 text-muted-foreground">
-                    J'extrais les chiffres et j'écris au bon endroit : journal, calendrier, historique d'exos.
+                    J'extrais les chiffres et j'écris au bon endroit : journal, séances, historique d'exos.
                   </p>
                 </div>
               </li>
@@ -168,11 +169,27 @@ export function CoachChat({ variant = "page" }: { variant?: "page" | "floating" 
           <MessageBubble key={m.id} message={m} />
         ))}
         {loading && (
-          <div className="flex justify-start">
-            <div className="neu-surface-sm rounded-2xl px-4 py-3 text-sm text-muted-foreground">
-              Le coach réfléchit…
+          <motion.div
+            className="flex justify-start"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            <div className="neu-surface-sm flex items-center gap-1.5 rounded-2xl px-4 py-3.5">
+              {[0, 1, 2].map((i) => (
+                <motion.span
+                  key={i}
+                  className="h-2 w-2 rounded-full bg-accent-gradient"
+                  animate={{ opacity: [0.3, 1, 0.3], y: [0, -3, 0] }}
+                  transition={{
+                    duration: 1,
+                    repeat: Infinity,
+                    ease: "easeInOut",
+                    delay: i * 0.16
+                  }}
+                />
+              ))}
             </div>
-          </div>
+          </motion.div>
         )}
         {error && (
           <div className="rounded-xl border border-danger/30 bg-danger/5 px-3 py-2 text-xs text-danger">

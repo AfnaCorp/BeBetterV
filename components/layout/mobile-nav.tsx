@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BookOpen, CalendarDays, TrendingUp } from "lucide-react";
+import { BookOpen, Dumbbell, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 
 const items = [
   { href: "/journal", label: "Journal", icon: BookOpen },
-  { href: "/calendrier", label: "Agenda", icon: CalendarDays },
+  { href: "/sport", label: "Sport", icon: Dumbbell },
   { href: "/progression", label: "Progrès", icon: TrendingUp }
 ];
 
