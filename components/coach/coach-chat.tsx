@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Send } from "lucide-react";
 import { useAppData } from "@/components/app-data-provider";
@@ -9,20 +10,50 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/input";
 import { MessageBubble } from "./message-bubble";
 import { cn } from "@/lib/utils/cn";
+import { toISODate, todayISODate } from "@/lib/utils/dates";
+import { flagCoachWrite, hapticPulse, targetRoute } from "@/lib/coach-feedback";
 import type { ChatMessage, WriteRecord } from "@/types";
 
+const GREETING_TEXT = "Bonjour, comment puis-je vous aider aujourd'hui ?";
+const PAGE_SIZE = 10;
+
+// `createdAt` peut être une string ISO, un Timestamp Firestore, ou absent.
+// On normalise vers une clé jour `YYYY-MM-DD`, en retombant sur aujourd'hui
+// pour toute valeur invalide (sinon `toISOString()` lève RangeError).
+function dayKeyOf(createdAt: unknown): string {
+  let date: Date;
+  if (createdAt instanceof Date) {
+    date = createdAt;
+  } else if (typeof createdAt === "string" || typeof createdAt === "number") {
+    date = new Date(createdAt);
+  } else if (
+    createdAt &&
+    typeof createdAt === "object" &&
+    "toDate" in createdAt &&
+    typeof (createdAt as { toDate: () => Date }).toDate === "function"
+  ) {
+    date = (createdAt as { toDate: () => Date }).toDate();
+  } else {
+    return todayISODate();
+  }
+  return Number.isNaN(date.getTime()) ? todayISODate() : toISODate(date);
+}
+
 export function CoachChat({ variant = "page" }: { variant?: "page" | "floating" } = {}) {
-  const { messages, profile, weights, sleep, meals, sessions, dayLogs, habits, facts } = useAppData();
+  const { messages, profile, weights, sleep, meals, sessions, dayLogs, habits, facts, programs } = useAppData();
   const { user } = useAuth();
+  const router = useRouter();
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<ChatMessage[]>([]);
+  // Nombre de messages des jours précédents dévoilés, par tranches de PAGE_SIZE.
+  const [revealedOlder, setRevealedOlder] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Merge Firestore-backed messages with locally-pending ones. Once Firestore
   // confirms a pending message (matching role + content), drop the local copy.
-  const visibleMessages = useMemo<ChatMessage[]>(() => {
+  const allMessages = useMemo<ChatMessage[]>(() => {
     if (pending.length === 0) return messages;
     const stillPending = pending.filter(
       (p) => !messages.some((m) => m.role === p.role && m.content === p.content)
@@ -30,15 +61,59 @@ export function CoachChat({ variant = "page" }: { variant?: "page" | "floating" 
     return [...messages, ...stillPending];
   }, [messages, pending]);
 
+  // Par défaut, on n'affiche que les messages d'aujourd'hui. Les jours précédents
+  // se révèlent par tranches de PAGE_SIZE via « Afficher les messages précédents ».
+  const today = todayISODate();
+  const olderMessages = useMemo(
+    () => allMessages.filter((m) => dayKeyOf(m.createdAt) !== today),
+    [allMessages, today]
+  );
+  const todayMessages = useMemo(
+    () => allMessages.filter((m) => dayKeyOf(m.createdAt) === today),
+    [allMessages, today]
+  );
+  const remainingOlder = Math.max(0, olderMessages.length - revealedOlder);
+
+  // Message d'accueil quotidien : injecté localement (non persisté) à l'ouverture
+  // tant qu'aucun échange n'a eu lieu aujourd'hui.
+  const hasMessagesToday = todayMessages.length > 0;
+  const greeting = useMemo<ChatMessage>(
+    () => ({
+      id: "daily-greeting",
+      role: "assistant",
+      content: GREETING_TEXT,
+      createdAt: new Date().toISOString()
+    }),
+    []
+  );
+
+  const visibleMessages = useMemo<ChatMessage[]>(() => {
+    // On prend les `revealedOlder` derniers messages anciens (les plus récents).
+    const shownOlder =
+      revealedOlder > 0 ? olderMessages.slice(olderMessages.length - revealedOlder) : [];
+    const base = [...shownOlder, ...todayMessages];
+    return hasMessagesToday ? base : [greeting, ...base];
+  }, [olderMessages, todayMessages, revealedOlder, hasMessagesToday, greeting]);
+
+  const revealOlder = () => {
+    setRevealedOlder((n) => Math.min(olderMessages.length, n + PAGE_SIZE));
+    // Après révélation d'une tranche, on ramène la vue tout en bas de la conv.
+    requestAnimationFrame(() => {
+      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+    });
+  };
+
   useEffect(() => {
     setPending((current) =>
       current.filter((p) => !messages.some((m) => m.role === p.role && m.content === p.content))
     );
   }, [messages]);
 
+  // On scrolle en bas pour les nouveaux messages / le loading (la révélation
+  // d'historique gère son propre scroll dans revealOlder).
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [visibleMessages.length, loading]);
+  }, [allMessages.length, loading]);
 
   const submit = async (event?: FormEvent) => {
     event?.preventDefault();
@@ -69,6 +144,7 @@ export function CoachChat({ variant = "page" }: { variant?: "page" | "floating" 
           message: value,
           history: messages,
           context: {
+            today: todayISODate(),
             profile,
             recentWeights: weights,
             recentSleep: sleep,
@@ -76,7 +152,8 @@ export function CoachChat({ variant = "page" }: { variant?: "page" | "floating" 
             recentSessions: sessions,
             recentDayLogs: dayLogs,
             recentHabits: habits,
-            facts
+            facts,
+            programs
           }
         })
       });
@@ -95,6 +172,17 @@ export function CoachChat({ variant = "page" }: { variant?: "page" | "floating" 
         createdAt: new Date().toISOString()
       };
       setPending((p) => [...p, assistantLocal]);
+
+      // Feedback sur écriture du coach : vibration + navigation douce vers la page concernée.
+      if (data.writes && data.writes.length > 0) {
+        hapticPulse();
+        const route = targetRoute(data.writes.map((w) => w.kind));
+        if (route) {
+          flagCoachWrite(route);
+          // Petit délai pour laisser apparaître la réponse avant de naviguer.
+          setTimeout(() => router.push(route), 900);
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur inconnue");
       setInput(value);
@@ -165,6 +253,17 @@ export function CoachChat({ variant = "page" }: { variant?: "page" | "floating" 
 
           </div>
         )}
+        {remainingOlder > 0 && (
+          <div className="flex justify-center">
+            <button
+              type="button"
+              onClick={revealOlder}
+              className="neu-pressable rounded-full px-4 py-1.5 text-xs font-medium text-muted-foreground transition hover:text-foreground"
+            >
+              Afficher les messages précédents
+            </button>
+          </div>
+        )}
         {visibleMessages.map((m) => (
           <MessageBubble key={m.id} message={m} />
         ))}
@@ -198,13 +297,14 @@ export function CoachChat({ variant = "page" }: { variant?: "page" | "floating" 
         )}
       </div>
 
-      <form onSubmit={submit} className="mt-4 space-y-3">
-        <div className="flex items-end gap-2">
+      <form onSubmit={submit} className="mt-4">
+        <div className="flex items-center gap-2">
           <Textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Parle au coach…"
-            className="min-h-12"
+            rows={1}
+            className="min-h-12 h-12 py-3.5 leading-5"
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
@@ -212,7 +312,13 @@ export function CoachChat({ variant = "page" }: { variant?: "page" | "floating" 
               }
             }}
           />
-          <Button type="submit" disabled={loading || !input.trim() || !user} size="lg">
+          <Button
+            type="submit"
+            disabled={loading || !input.trim() || !user}
+            size="icon"
+            aria-label="Envoyer"
+            className="h-12 w-12 shrink-0"
+          >
             <Send className="h-4 w-4" />
           </Button>
         </div>

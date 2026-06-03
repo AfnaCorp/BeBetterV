@@ -16,6 +16,8 @@ import {
   X
 } from "lucide-react";
 import { useAppData } from "@/components/app-data-provider";
+import { CoachWriteBanner } from "@/components/coach/coach-write-banner";
+import { toISODate, todayISODate } from "@/lib/utils/dates";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { DayLog, MealEntry, SleepEntry, WeightEntry } from "@/types";
@@ -37,8 +39,8 @@ function formatDayLabel(iso: string) {
   const today = new Date();
   const yest = new Date();
   yest.setDate(today.getDate() - 1);
-  const todayKey = dayKey(today.toISOString());
-  const yestKey = dayKey(yest.toISOString());
+  const todayKey = toISODate(today);
+  const yestKey = toISODate(yest);
   if (iso === todayKey) return "Aujourd'hui";
   if (iso === yestKey) return "Hier";
   return d.toLocaleDateString("fr-FR", { weekday: "long", day: "2-digit", month: "long" });
@@ -69,7 +71,7 @@ function buildTimeline(days = TIMELINE_DAYS): string[] {
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date(today);
     d.setDate(today.getDate() - i);
-    out.push(d.toISOString().slice(0, 10));
+    out.push(toISODate(d));
   }
   return out;
 }
@@ -274,7 +276,7 @@ function MetricRow({
 
 function BienEtreTab() {
   const { dayLogs, upsertDayLog } = useAppData();
-  const todayKey = dayKey(new Date().toISOString());
+  const todayKey = todayISODate();
 
   const today = useMemo(
     () => dayLogs.find((d) => dayKey(d.date) === todayKey),
@@ -357,7 +359,7 @@ function BienEtreTab() {
 function HabitudesTab() {
   const { habits, addHabit, updateHabit, removeHabit } = useAppData();
   const [name, setName] = useState("");
-  const today = dayKey(new Date().toISOString());
+  const today = todayISODate();
 
   const todayHabits = useMemo(
     () => habits.filter((h) => dayKey(h.date) === today),
@@ -372,7 +374,7 @@ function HabitudesTab() {
     e.preventDefault();
     const trimmed = name.trim();
     if (!trimmed) return;
-    await addHabit({ date: new Date().toISOString(), name: trimmed, done: false, source: "manual" });
+    await addHabit({ date: todayISODate(), name: trimmed, done: false, source: "manual" });
     setName("");
   }
 
@@ -465,6 +467,7 @@ export default function JournalPage() {
 
   return (
     <div className="space-y-4">
+      <CoachWriteBanner route="/journal" />
       <h1 className="text-2xl font-semibold text-foreground">Journal</h1>
 
       <div role="tablist" className="neu-inset grid grid-cols-3 gap-1 rounded-full p-1">

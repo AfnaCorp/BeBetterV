@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Dumbbell,
   Plus,
@@ -18,10 +18,12 @@ import {
   Search,
 } from "lucide-react";
 import { useAppData } from "@/components/app-data-provider";
+import { CoachWriteBanner } from "@/components/coach/coach-write-banner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { DEFAULT_PROGRAM } from "@/lib/default-program";
+import { toISODate } from "@/lib/utils/dates";
 import type {
   ProgramDraft,
   ProgramExercise,
@@ -45,20 +47,24 @@ function rpeToLevel(rpe: number) {
   return 2;
 }
 
+// Pastilles compactes de ressenti : ● vert / orange / rouge selon le niveau.
+const DOT_COLORS: string[] = ["bg-green-500", "bg-yellow-500", "bg-red-500"];
+
 function DifficultyPicker({ rpe, onChange }: { rpe: number; onChange: (rpe: number) => void }) {
   const level = rpeToLevel(rpe);
   return (
-    <div className="flex gap-1.5">
+    <div className="flex items-center gap-1">
       {DIFFICULTY.map((d, i) => (
         <button
           key={d.label}
           onClick={() => onChange(d.rpe)}
-          className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-            i === level ? d.active : `neu-surface-sm ${d.idle}`
+          title={d.label}
+          aria-label={d.label}
+          aria-pressed={i === level}
+          className={`h-3.5 w-3.5 rounded-full transition ${
+            i === level ? `${DOT_COLORS[i]} scale-110` : "bg-muted hover:bg-muted-foreground/30"
           }`}
-        >
-          {d.label}
-        </button>
+        />
       ))}
     </div>
   );
@@ -82,16 +88,16 @@ function NumberField({
   const dec = () => onChange(Math.max(min, Math.round((value - step) * 100) / 100));
   const inc = () => onChange(Math.round((value + step) * 100) / 100);
   return (
-    <div className="flex flex-1 items-center justify-center gap-1">
+    <div className="flex items-center gap-0.5 rounded-lg neu-inset px-0.5">
       <button
         type="button"
         onClick={dec}
-        className="grid h-8 w-8 shrink-0 place-items-center rounded-lg neu-pressable text-muted-foreground"
+        className="grid h-7 w-6 shrink-0 place-items-center rounded-md text-muted-foreground active:bg-muted"
         aria-label="Diminuer"
       >
-        <Minus className="h-3.5 w-3.5" />
+        <Minus className="h-3 w-3" />
       </button>
-      <div className="flex min-w-[3.25rem] flex-col items-center">
+      <span className="flex items-baseline gap-0.5">
         <input
           type="number"
           inputMode="decimal"
@@ -99,161 +105,222 @@ function NumberField({
           step={step}
           value={value}
           onChange={(e) => onChange(e.target.value === "" ? min : Number(e.target.value))}
-          className="w-full bg-transparent text-center text-base font-bold text-foreground outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+          className="w-9 bg-transparent text-center text-sm font-bold text-foreground outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
         />
-        <span className="-mt-0.5 text-[9px] uppercase tracking-wide text-muted-foreground">{unit}</span>
-      </div>
+        <span className="text-[9px] uppercase tracking-wide text-muted-foreground">{unit}</span>
+      </span>
       <button
         type="button"
         onClick={inc}
-        className="grid h-8 w-8 shrink-0 place-items-center rounded-lg neu-pressable text-muted-foreground"
+        className="grid h-7 w-6 shrink-0 place-items-center rounded-md text-muted-foreground active:bg-muted"
         aria-label="Augmenter"
       >
-        <Plus className="h-3.5 w-3.5" />
+        <Plus className="h-3 w-3" />
       </button>
     </div>
   );
 }
 
-// ─── Helpers semaine ──────────────────────────────────────────────────────────
+// ─── Helpers frise chronologique ────────────────────────────────────────────
 
-const DAY_LABELS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
+const isoDay = toISODate;
 
-function isoDay(d: Date) {
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+const SHORT_DAYS = ["dim", "lun", "mar", "mer", "jeu", "ven", "sam"];
+
+const TIMELINE_DAYS = 30;
+
+/** Les `days` derniers jours, du plus ancien au plus récent (aujourd'hui en dernier). */
+function buildTimeline(days = TIMELINE_DAYS): Date[] {
+  const out: Date[] = [];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    out.push(d);
+  }
+  return out;
 }
 
-/** Lundi → Dimanche de la semaine contenant `ref`. */
-function currentWeekDays(ref = new Date()) {
-  const offset = (ref.getDay() + 6) % 7; // 0 = lundi
-  const monday = new Date(ref);
-  monday.setDate(ref.getDate() - offset);
-  monday.setHours(0, 0, 0, 0);
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(monday);
-    d.setDate(monday.getDate() + i);
-    return d;
-  });
+function formatDayLabel(iso: string) {
+  const d = new Date(`${iso}T00:00:00`);
+  const today = new Date();
+  const yest = new Date();
+  yest.setDate(today.getDate() - 1);
+  if (iso === isoDay(today)) return "Aujourd'hui";
+  if (iso === isoDay(yest)) return "Hier";
+  return d.toLocaleDateString("fr-FR", { weekday: "long", day: "2-digit", month: "long" });
 }
 
-// ─── Vue semaine ──────────────────────────────────────────────────────────────
+/** Séance planifiée du programme pour un jour donné (lundi = index 0). */
+function plannedFor(program: ProgramTemplate, day: Date): ProgramSession | undefined {
+  const idx = (day.getDay() + 6) % 7; // 0 = lundi
+  const s = program.sessions[idx];
+  return s && s.exercises.length > 0 ? s : undefined;
+}
 
-function WeekView({
+// ─── Vue frise (sélecteur de date + détail du jour) ──────────────────────────
+
+function TimelineView({
   program,
-  onStartSession,
+  renderPlanned,
+  onRedo,
 }: {
   program: ProgramTemplate;
-  onStartSession: (session: ProgramSession, program: ProgramTemplate) => void;
+  /** Rendu du détail interactif pour une séance planifiée non encore réalisée. */
+  renderPlanned: (session: ProgramSession) => React.ReactNode;
+  /** Refaire une séance déjà réalisée (rouvre la saisie en overlay). */
+  onRedo: (session: SessionEntry) => void;
 }) {
   const { sessions } = useAppData();
-  const days = currentWeekDays();
-  const todayIso = isoDay(new Date());
+  const timeline = useMemo(() => buildTimeline(), []);
+  const todayIso = isoDay(timeline[timeline.length - 1]);
+  const [selected, setSelected] = useState<string>(todayIso);
+  const stripRef = useRef<HTMLDivElement>(null);
+  const selectedRef = useRef<HTMLButtonElement>(null);
 
-  const weekIsos = new Set(days.map(isoDay));
-  const doneIds = useMemo(
-    () =>
-      new Set(
-        sessions
-          .filter((s) => s.programSessionId && weekIsos.has(s.date.slice(0, 10)))
-          .map((s) => s.programSessionId as string)
-      ),
-    [sessions] // eslint-disable-line react-hooks/exhaustive-deps
-  );
+  // Séances réalisées indexées par jour (ISO).
+  const doneByDay = useMemo(() => {
+    const map = new Map<string, SessionEntry[]>();
+    sessions.forEach((s) => {
+      const key = s.date.slice(0, 10);
+      const arr = map.get(key) ?? [];
+      arr.push(s);
+      map.set(key, arr);
+    });
+    return map;
+  }, [sessions]);
 
-  const trainingDays = program.sessions.filter((s) => s.exercises.length > 0);
-  const doneCount = trainingDays.filter((s) => doneIds.has(s.id)).length;
-  const pct = trainingDays.length ? Math.round((doneCount / trainingDays.length) * 100) : 0;
-  const draftId = program.draft?.programSessionId;
+  useEffect(() => {
+    selectedRef.current?.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
+  }, [selected]);
+
+  useEffect(() => {
+    const el = stripRef.current;
+    if (el) el.scrollLeft = el.scrollWidth;
+  }, []);
+
+  const selectedDate = new Date(`${selected}T00:00:00`);
+  const doneSessions = doneByDay.get(selected) ?? [];
+  const planned = plannedFor(program, selectedDate);
+  const isFutureOrToday = selected >= todayIso;
+  // La séance planifiée est-elle déjà réalisée ce jour ?
+  const plannedDone = planned ? doneSessions.some((s) => s.programSessionId === planned.id) : false;
 
   return (
-    <div className="space-y-4">
-      {/* Récap progression */}
-      <Card className="neu-surface-sm border-none shadow-none">
-        <CardContent className="p-4">
-          <div className="mb-2 flex items-baseline justify-between">
-            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-              Cette semaine
-            </p>
-            <p className="text-sm font-semibold text-foreground">
-              {doneCount}
-              <span className="text-muted-foreground">/{trainingDays.length} séances</span>
-            </p>
-          </div>
-          <div className="h-2.5 overflow-hidden rounded-full neu-inset">
-            <div
-              className="h-full rounded-full bg-accent-gradient transition-all duration-500"
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Jours de la semaine */}
-      <div className="space-y-1.5">
-        {days.map((day, i) => {
-          const planned = program.sessions[i];
-          const isRest = !planned || planned.exercises.length === 0;
-          const done = planned ? doneIds.has(planned.id) : false;
-          const inProgress = planned ? planned.id === draftId : false;
-          const isToday = isoDay(day) === todayIso;
-          const startable = !isRest;
-          const Row = startable ? "button" : "div";
-          return (
-            <Row
-              key={i}
-              {...(startable
-                ? { onClick: () => onStartSession(planned!, program), type: "button" as const }
-                : {})}
-              className={`flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left transition ${
-                isToday ? "neu-surface-sm ring-1 ring-primary/30" : ""
-              } ${startable ? "active:scale-[0.99]" : ""}`}
-            >
-              <div
-                className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${
-                  isToday ? "bg-accent-gradient text-white" : "neu-inset text-muted-foreground"
+    <div className="space-y-5">
+      {/* Frise chronologique horizontale */}
+      <div className="-mx-4 sm:-mx-5">
+        <div
+          ref={stripRef}
+          role="tablist"
+          aria-label="Choisir une date"
+          className="flex snap-x snap-mandatory gap-2 overflow-x-auto px-4 pb-1 pt-1 sm:px-5 [&::-webkit-scrollbar]:hidden"
+          style={{ scrollbarWidth: "none" }}
+        >
+          {timeline.map((day) => {
+            const iso = isoDay(day);
+            const isSelected = iso === selected;
+            const isToday = iso === todayIso;
+            const has = (doneByDay.get(iso)?.length ?? 0) > 0;
+            return (
+              <button
+                key={iso}
+                ref={isSelected ? selectedRef : undefined}
+                role="tab"
+                aria-selected={isSelected}
+                onClick={() => setSelected(iso)}
+                className={`flex w-12 shrink-0 snap-center flex-col items-center gap-1 rounded-2xl px-1 py-2 transition ${
+                  isSelected
+                    ? "gradient-accent text-white shadow-md"
+                    : "neu-surface-sm text-muted-foreground hover:text-foreground"
                 }`}
               >
-                <span className="text-[10px] font-semibold uppercase leading-none">{DAY_LABELS[i]}</span>
-                <span className={`text-sm font-bold leading-tight ${isToday ? "text-white" : "text-foreground"}`}>
+                <span className={`text-[10px] uppercase tracking-wide ${isSelected ? "text-white/80" : ""}`}>
+                  {SHORT_DAYS[day.getDay()]}
+                </span>
+                <span className={`text-base font-semibold ${isSelected ? "text-white" : "text-foreground"}`}>
                   {day.getDate()}
                 </span>
-              </div>
+                <span
+                  className={`h-1.5 w-1.5 rounded-full transition ${
+                    has
+                      ? isSelected
+                        ? "bg-white"
+                        : "bg-accent-gradient gradient-accent"
+                      : "bg-transparent"
+                  } ${isToday && !isSelected ? "ring-2 ring-primary/40" : ""}`}
+                  aria-hidden
+                />
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
-              <div className="min-w-0 flex-1">
-                {isRest ? (
-                  <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                    <Moon className="h-3.5 w-3.5" /> Repos
-                  </p>
-                ) : (
-                  <>
-                    <p className={`truncate text-sm font-medium ${done ? "text-muted-foreground" : "text-foreground"}`}>
-                      {planned.title}
-                    </p>
-                    <p className="text-[11px] text-muted-foreground">
-                      {planned.exercises.length} exercice{planned.exercises.length > 1 ? "s" : ""}
-                    </p>
-                  </>
-                )}
-              </div>
+      {/* Détail du jour sélectionné */}
+      <div>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide capitalize text-muted-foreground">
+          {formatDayLabel(selected)}
+        </p>
 
-              {isRest ? null : inProgress ? (
-                <span className="flex shrink-0 items-center gap-1 rounded-xl bg-amber-100 px-3 py-1.5 text-xs font-semibold text-amber-700">
-                  <Dumbbell className="h-3.5 w-3.5" /> Reprendre
-                </span>
-              ) : done ? (
-                <span className="flex shrink-0 items-center gap-1 rounded-full bg-green-100 px-2.5 py-1 text-[11px] font-semibold text-green-700">
-                  <Check className="h-3 w-3" /> Refaire
-                </span>
-              ) : (
-                <span className="flex shrink-0 items-center gap-1 rounded-xl bg-accent-gradient px-3 py-1.5 text-xs font-semibold text-white">
-                  <Dumbbell className="h-3.5 w-3.5" /> Go
-                </span>
-              )}
-            </Row>
-          );
-        })}
+        <div className="space-y-2">
+          {/* Séances réalisées ce jour */}
+          {doneSessions.map((s) => (
+            <DoneSessionCard key={s.id} session={s} onRedo={() => onRedo(s)} />
+          ))}
+
+          {/* Séance planifiée (aujourd'hui / futur, pas encore faite) : saisie inline directe */}
+          {planned && isFutureOrToday && !plannedDone && renderPlanned(planned)}
+
+          {/* État vide : rien fait, rien (ou repos) planifié */}
+          {doneSessions.length === 0 && !(planned && isFutureOrToday && !plannedDone) && (
+            <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
+              <Moon className="h-4 w-4 shrink-0" />
+              <span>
+                {planned ? "Séance planifiée non réalisée." : "Jour de repos — aucune séance planifiée."}
+              </span>
+            </div>
+          )}
+        </div>
       </div>
     </div>
+  );
+}
+
+/** Carte d'une séance réalisée : titre, exos, séries, bouton refaire. */
+function DoneSessionCard({ session, onRedo }: { session: SessionEntry; onRedo: () => void }) {
+  const totalSets = session.exercises.reduce((acc, ex) => acc + ex.sets.length, 0);
+  return (
+    <Card className="neu-surface-sm border-none shadow-none">
+      <CardContent className="p-4">
+        <div className="mb-2 flex items-center gap-2">
+          <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-green-100 text-green-700">
+            <Check className="h-3 w-3" />
+          </span>
+          <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">{session.title}</span>
+          <button
+            onClick={onRedo}
+            className="flex shrink-0 items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-[11px] font-semibold text-muted-foreground transition hover:text-foreground"
+          >
+            <Dumbbell className="h-3 w-3" /> Refaire
+          </button>
+        </div>
+        <div className="space-y-1.5 pl-7">
+          {session.exercises.map((ex, i) => (
+            <div key={i} className="flex items-baseline justify-between gap-2 text-sm">
+              <span className="min-w-0 flex-1 truncate text-foreground">{ex.name}</span>
+              <span className="shrink-0 text-xs text-muted-foreground">
+                {ex.sets.map((s) => `${s.weight}×${s.reps}`).join("  ")}
+              </span>
+            </div>
+          ))}
+        </div>
+        <p className="mt-2 pl-7 text-[11px] text-muted-foreground">
+          {totalSets} série{totalSets > 1 ? "s" : ""}
+        </p>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -586,6 +653,11 @@ interface LiveSet {
   weight: number;
   rpe: number;
   done: boolean;
+  /**
+   * `false` tant que la série suit la 1ère ligne « modèle » (cas sans historique).
+   * Passe à `true` dès qu'on modifie manuellement son poids/reps : elle se détache.
+   */
+  touched?: boolean;
 }
 
 interface LiveExercise {
@@ -603,6 +675,7 @@ function LogView({
   lastByExercise,
   library,
   lookupLast,
+  inline = false,
   onChange,
   onFinish,
   onCancel,
@@ -616,16 +689,21 @@ function LogView({
   library: string[];
   /** Derniers sets connus d'un exercice par son nom, pour pré-remplir un ajout. */
   lookupLast: (name: string) => { reps: number; weight: number }[] | undefined;
+  /** Affichage inline (dans le flux de la page) plutôt qu'en overlay plein écran. */
+  inline?: boolean;
   onChange: (exercises: LiveExercise[]) => void;
   onFinish: (entry: Omit<SessionEntry, "id" | "createdAt">) => void;
   onCancel: () => void;
 }) {
   const [exercises, setExercises] = useState<LiveExercise[]>(initial);
   const [adding, setAdding] = useState(false);
-  // Par défaut, tous les exercices de départ sont repliés.
-  const [collapsed, setCollapsed] = useState<Set<number>>(
-    () => new Set(initial.map((_, i) => i))
-  );
+  // Index de l'exercice en attente de confirmation de suppression (null = aucune).
+  const [confirmRemoveIdx, setConfirmRemoveIdx] = useState<number | null>(null);
+  // Premier exercice non terminé déplié, le reste replié — l'user voit direct quoi faire.
+  const [collapsed, setCollapsed] = useState<Set<number>>(() => {
+    const firstOpen = initial.findIndex((e) => e.sets.some((s) => !s.done));
+    return new Set(initial.map((_, i) => i).filter((i) => i !== firstOpen));
+  });
 
   function toggleCollapse(exIdx: number) {
     setCollapsed((prev) => {
@@ -649,10 +727,29 @@ function LogView({
     });
   }
 
-  function updateSet(exIdx: number, setIdx: number, field: keyof LiveSet, value: number) {
+  function updateSet(exIdx: number, setIdx: number, field: "reps" | "weight", value: number) {
     setExercises((prev) => {
       const next = prev.map((e) => ({ ...e, sets: e.sets.map((s) => ({ ...s })) }));
-      (next[exIdx].sets[setIdx] as Record<string, unknown>)[field] = value;
+      const sets = next[exIdx].sets;
+      sets[setIdx][field] = value;
+      if (setIdx === 0) {
+        // La 1ère série est le modèle : propager poids/reps aux séries jamais
+        // modifiées manuellement (touched: false).
+        for (let i = 1; i < sets.length; i++) {
+          if (!sets[i].touched) sets[i][field] = value;
+        }
+      } else {
+        // Modifier une autre série la détache du modèle.
+        sets[setIdx].touched = true;
+      }
+      return next;
+    });
+  }
+
+  function updateRpe(exIdx: number, setIdx: number, rpe: number) {
+    setExercises((prev) => {
+      const next = prev.map((e) => ({ ...e, sets: e.sets.map((s) => ({ ...s })) }));
+      next[exIdx].sets[setIdx].rpe = rpe;
       return next;
     });
   }
@@ -662,7 +759,7 @@ function LogView({
       const next = prev.map((e) => ({ ...e, sets: e.sets.map((s) => ({ ...s })) }));
       const sets = next[exIdx].sets;
       const ref = sets[sets.length - 1]; // copie le dernier set comme base
-      sets.push({ reps: ref?.reps ?? 8, weight: ref?.weight ?? 0, rpe: 0, done: false });
+      sets.push({ reps: ref?.reps ?? 8, weight: ref?.weight ?? 0, rpe: 0, done: false, touched: true });
       return next;
     });
   }
@@ -682,18 +779,20 @@ function LogView({
     const clean = name.trim();
     if (!clean) return;
     const last = lookupLast(clean);
-    const sets: LiveSet[] = (last && last.length > 0 ? last : [{ reps: 8, weight: 0 }]).map((s) => ({
+    const hasHistory = !!last && last.length > 0;
+    const sets: LiveSet[] = (hasHistory ? last : [{ reps: 8, weight: 0 }]).map((s, i) => ({
       reps: s.reps,
       weight: s.weight,
       rpe: 0,
       done: false,
+      touched: hasHistory || i === 0,
     }));
     setExercises((prev) => [...prev, { name: clean, sets }]);
     setAdding(false);
   }
 
   function finish() {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = isoDay(new Date());
     onFinish({
       date: today,
       title: `${session.title} — ${programName}`,
@@ -711,13 +810,21 @@ function LogView({
   const pct = totalSets ? Math.round((totalDone / totalSets) * 100) : 0;
 
   return (
-    <div className="fixed inset-0 z-[80] flex flex-col bg-background">
-      {/* Header sticky avec progression */}
-      <header className="shrink-0 border-b border-border/50 bg-card px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
+    <div className={inline ? "space-y-3" : "fixed inset-0 z-[80] flex flex-col bg-background"}>
+      {/* Header avec progression — slim en inline, plein en overlay */}
+      <header
+        className={
+          inline
+            ? "rounded-2xl neu-surface-sm px-4 py-3"
+            : "shrink-0 border-b border-border/50 bg-card px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))]"
+        }
+      >
         <div className="flex items-center gap-3">
-          <button onClick={onCancel} className="text-muted-foreground hover:text-foreground">
-            <ChevronLeft className="h-6 w-6" />
-          </button>
+          {!inline && (
+            <button onClick={onCancel} className="text-muted-foreground hover:text-foreground">
+              <ChevronLeft className="h-6 w-6" />
+            </button>
+          )}
           <div className="min-w-0 flex-1">
             <h2 className="truncate font-semibold text-foreground">{session.title}</h2>
             <p className="text-xs text-muted-foreground">
@@ -734,8 +841,8 @@ function LogView({
         </div>
       </header>
 
-      {/* Liste scrollable */}
-      <div className="flex-1 space-y-3 overflow-y-auto px-3 py-4 pb-32">
+      {/* Liste des exercices */}
+      <div className={inline ? "space-y-3" : "flex-1 space-y-3 overflow-y-auto px-3 py-4 pb-32"}>
         {/* Ajouter un exercice à la séance en cours */}
         <button
           onClick={() => setAdding(true)}
@@ -761,7 +868,7 @@ function LogView({
               className="relative neu-surface-sm overflow-hidden rounded-2xl pl-1.5"
             >
               <span className={`absolute inset-y-0 left-0 w-1.5 ${statusBar}`} aria-hidden />
-              <div className="flex items-center gap-2 px-4 py-3">
+              <div className="flex items-center gap-2 px-4 py-2.5">
                 <button
                   onClick={() => toggleCollapse(exIdx)}
                   className="flex min-w-0 flex-1 items-center gap-2 text-left"
@@ -778,7 +885,7 @@ function LogView({
                   {exDone}/{ex.sets.length}
                 </span>
                 <button
-                  onClick={() => removeExercise(exIdx)}
+                  onClick={() => setConfirmRemoveIdx(exIdx)}
                   className="shrink-0 text-muted-foreground hover:text-destructive"
                   aria-label="Supprimer l'exercice"
                 >
@@ -788,18 +895,21 @@ function LogView({
               {!isCollapsed && (
               <>
               <div className="divide-y divide-muted/40">
-                {ex.sets.map((set, setIdx) => (
-                  <div key={setIdx} className={`px-3 py-3 transition ${set.done ? "bg-green-50/60" : ""}`}>
-                    <div className="flex items-center gap-2.5">
+                {ex.sets.map((set, setIdx) => {
+                  const last = lastSets?.[setIdx];
+                  return (
+                  <div key={setIdx} className={`px-3 py-1.5 transition ${set.done ? "bg-green-50/60" : ""}`}>
+                    <div className="flex items-center gap-2">
                       <button
                         onClick={() => toggleSet(exIdx, setIdx)}
-                        className={`grid h-7 w-7 shrink-0 place-items-center rounded-full border-2 transition ${
+                        className={`grid h-6 w-6 shrink-0 place-items-center rounded-full border-2 transition ${
                           set.done ? "border-green-500 bg-green-500 text-white" : "border-muted"
                         }`}
+                        aria-label={`Série ${setIdx + 1} ${set.done ? "faite" : "à faire"}`}
                       >
-                        {set.done && <Check className="h-4 w-4" />}
+                        {set.done && <Check className="h-3.5 w-3.5" />}
                       </button>
-                      <span className="w-6 shrink-0 text-xs font-semibold text-muted-foreground">S{setIdx + 1}</span>
+                      <span className="w-5 shrink-0 text-[11px] font-semibold text-muted-foreground">S{setIdx + 1}</span>
                       <NumberField
                         value={set.weight}
                         step={2.5}
@@ -814,29 +924,29 @@ function LogView({
                         unit="reps"
                         onChange={(v) => updateSet(exIdx, setIdx, "reps", v)}
                       />
-                      <button
-                        onClick={() => removeSet(exIdx, setIdx)}
-                        className="shrink-0 text-muted-foreground/50 hover:text-destructive"
-                        aria-label="Supprimer la série"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
+                      <div className="ml-auto flex items-center gap-2">
+                        <DifficultyPicker rpe={set.rpe} onChange={(rpe) => updateRpe(exIdx, setIdx, rpe)} />
+                        <button
+                          onClick={() => removeSet(exIdx, setIdx)}
+                          className="shrink-0 text-muted-foreground/40 hover:text-destructive"
+                          aria-label="Supprimer la série"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </div>
-                    {lastSets?.[setIdx] && (
-                      <p className="mt-1 pl-9 text-[10px] text-muted-foreground">
-                        Dernière séance : {lastSets[setIdx].weight} kg × {lastSets[setIdx].reps}
+                    {last && (
+                      <p className="pl-[3.25rem] text-[10px] leading-tight text-muted-foreground/70">
+                        dernière : {last.weight}×{last.reps}
                       </p>
                     )}
-                    <div className="mt-2 flex items-center justify-end gap-2 pl-9">
-                      <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Ressenti</span>
-                      <DifficultyPicker rpe={set.rpe} onChange={(rpe) => updateSet(exIdx, setIdx, "rpe", rpe)} />
-                    </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
               <button
                 onClick={() => addSet(exIdx)}
-                className="flex w-full items-center justify-center gap-1.5 py-2.5 text-xs font-medium text-muted-foreground hover:text-foreground"
+                className="flex w-full items-center justify-center gap-1.5 py-2 text-xs font-medium text-muted-foreground hover:text-foreground"
               >
                 <Plus className="h-3.5 w-3.5" /> Ajouter une série
               </button>
@@ -856,8 +966,52 @@ function LogView({
         />
       )}
 
-      {/* CTA fixe en bas */}
-      <div className="absolute inset-x-0 bottom-0 border-t border-border/50 bg-card/95 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur">
+      {confirmRemoveIdx !== null && (
+        <div className="fixed inset-0 z-[95] flex items-center justify-center p-5" role="dialog" aria-modal="true">
+          <button
+            className="absolute inset-0 bg-black/30 backdrop-blur-sm"
+            onClick={() => setConfirmRemoveIdx(null)}
+            aria-label="Annuler"
+          />
+          <div className="relative w-full max-w-xs rounded-3xl bg-card p-5 shadow-2xl">
+            <div className="mb-3 flex items-center gap-3">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-red-100 text-red-600">
+                <Trash2 className="h-5 w-5" />
+              </span>
+              <div className="min-w-0">
+                <h3 className="text-base font-semibold text-foreground">Supprimer l&apos;exercice ?</h3>
+                <p className="truncate text-sm text-muted-foreground">{exercises[confirmRemoveIdx]?.name}</p>
+              </div>
+            </div>
+            <p className="mb-4 text-sm text-muted-foreground">
+              Les séries déjà saisies pour cet exercice seront perdues.
+            </p>
+            <div className="flex gap-2">
+              <Button variant="ghost" className="flex-1" onClick={() => setConfirmRemoveIdx(null)}>
+                Annuler
+              </Button>
+              <Button
+                className="flex-1 bg-red-500 text-white hover:bg-red-600"
+                onClick={() => {
+                  removeExercise(confirmRemoveIdx);
+                  setConfirmRemoveIdx(null);
+                }}
+              >
+                <Trash2 className="mr-1.5 h-4 w-4" /> Supprimer
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CTA Terminer — dans le flux en inline, fixe en bas en overlay */}
+      <div
+        className={
+          inline
+            ? "pt-1"
+            : "absolute inset-x-0 bottom-0 border-t border-border/50 bg-card/95 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur"
+        }
+      >
         <Button onClick={finish} className="w-full" size="lg" disabled={totalDone === 0}>
           <Check className="mr-2 h-5 w-5" /> Terminer la séance ({totalDone}/{totalSets})
         </Button>
@@ -910,6 +1064,7 @@ function buildInitial(
   }
   return session.exercises.map((ex) => {
     const last = lastByExercise.get(ex.name);
+    const hasHistory = !!last && last.length > 0;
     return {
       name: ex.name,
       sets: Array.from({ length: ex.targetSets }, (_, i) => ({
@@ -917,9 +1072,27 @@ function buildInitial(
         weight: last?.[i]?.weight ?? ex.targetWeight ?? 0,
         rpe: 0,
         done: false,
+        // Sans historique, la 1ère série est le « modèle » et les suivantes la suivent
+        // (touched: false) jusqu'à modification manuelle. Avec historique, chaque
+        // série a sa propre valeur pré-remplie → figée d'office (touched: true).
+        touched: hasHistory || i === 0,
       })),
     };
   });
+}
+
+/** Construit une séance "refaire" depuis une séance réalisée (mêmes exos/cibles). */
+function redoSessionFromEntry(entry: SessionEntry): ProgramSession {
+  return {
+    id: entry.programSessionId ?? entry.id,
+    title: entry.title,
+    exercises: entry.exercises.map((ex) => ({
+      name: ex.name,
+      targetSets: ex.sets.length || 1,
+      targetReps: ex.sets[0]?.reps ?? 8,
+      targetWeight: ex.sets[0]?.weight,
+    })),
+  };
 }
 
 export default function SportPage() {
@@ -937,9 +1110,10 @@ export default function SportPage() {
     setActive({ programId: program.id, session, programName: program.name });
   }
 
-  async function handleFinish(entry: Omit<SessionEntry, "id" | "createdAt">) {
+  // Termine une séance pour un programme donné (inline ou overlay).
+  async function finishSession(programId: string, entry: Omit<SessionEntry, "id" | "createdAt">) {
     await addSession(entry);
-    if (active) await clearProgramDraft(active.programId); // séance terminée → on efface le brouillon
+    await clearProgramDraft(programId); // séance terminée → on efface le brouillon
     setActive(null);
   }
 
@@ -947,15 +1121,15 @@ export default function SportPage() {
     setActive(null); // on quitte sans terminer : le brouillon reste pour reprise
   }
 
-  function handleDraftChange(exercises: LiveExercise[]) {
-    if (!active) return;
+  // Auto-save du brouillon pour un programme/séance donné.
+  function saveDraft(programId: string, session: ProgramSession, exercises: LiveExercise[]) {
     const draft: ProgramDraft = {
-      programSessionId: active.session.id,
-      title: active.session.title,
+      programSessionId: session.id,
+      title: session.title,
       exercises,
       updatedAt: new Date().toISOString(),
     };
-    void updateProgram(active.programId, { draft });
+    void updateProgram(programId, { draft });
   }
 
   async function handleSaveProgram(draft: Omit<ProgramTemplate, "id" | "createdAt">) {
@@ -967,27 +1141,35 @@ export default function SportPage() {
     setEditing(null);
   }
 
-  // Overlay log
-  if (active) {
-    const activeProgram = programs.find((p) => p.id === active.programId);
-    const lastByExercise = lastSessionFor(sessions, active.session.id);
-    const initial = buildInitial(active.session, activeProgram?.draft, lastByExercise);
-    const index = buildExerciseIndex(sessions);
-    const library = [...index.keys()].sort((a, b) => a.localeCompare(b, "fr"));
+  // Index global des exercices (pour suggestions/pré-remplissage).
+  const exerciseIndex = buildExerciseIndex(sessions);
+  const library = [...exerciseIndex.keys()].sort((a, b) => a.localeCompare(b, "fr"));
+
+  /** Rend une séance interactive (overlay ou inline) pour un programme donné. */
+  function renderSession(program: ProgramTemplate, session: ProgramSession, inline: boolean) {
+    const lastByExercise = lastSessionFor(sessions, session.id);
+    const initial = buildInitial(session, program.draft, lastByExercise);
     return (
       <LogView
-        key={active.session.id}
-        session={active.session}
-        programName={active.programName}
+        key={session.id}
+        session={session}
+        programName={program.name}
         initial={initial}
         lastByExercise={lastByExercise}
         library={library}
-        lookupLast={(name) => index.get(name)}
-        onChange={handleDraftChange}
-        onFinish={handleFinish}
+        lookupLast={(name) => exerciseIndex.get(name)}
+        inline={inline}
+        onChange={(exercises) => saveDraft(program.id, session, exercises)}
+        onFinish={(entry) => finishSession(program.id, entry)}
         onCancel={handleCancelLog}
       />
     );
+  }
+
+  // Overlay log (refaire une séance passée / démarrer depuis un autre programme).
+  if (active) {
+    const activeProgram = programs.find((p) => p.id === active.programId);
+    if (activeProgram) return renderSession(activeProgram, active.session, false);
   }
 
   // Éditeur
@@ -1005,6 +1187,7 @@ export default function SportPage() {
 
   return (
     <div className="space-y-6">
+      <CoachWriteBanner route="/sport" />
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-foreground">Sport</h1>
         {program && (
@@ -1034,7 +1217,11 @@ export default function SportPage() {
       ) : (
         <>
           <p className="-mt-3 text-sm text-muted-foreground">{program.name}</p>
-          <WeekView program={program} onStartSession={handleStartSession} />
+          <TimelineView
+            program={program}
+            renderPlanned={(session) => renderSession(program, session, true)}
+            onRedo={(entry) => handleStartSession(redoSessionFromEntry(entry), program)}
+          />
 
           {programs.length > 1 && (
             <div className="space-y-2">

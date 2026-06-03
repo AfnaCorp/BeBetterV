@@ -33,7 +33,7 @@ export async function askCoach({ uid, message, history, context }: AskCoachInput
     history: asGeminiHistory(history),
     message,
     executeTool: async ({ name, args }) => {
-      const { write, error } = await executeTool({ uid }, name, args);
+      const { write, error } = await executeTool({ uid, today: context.today }, name, args);
       if (write) {
         writes.push(write);
         return { ok: true, summary: write.summary, ref: write.ref };

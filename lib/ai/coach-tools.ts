@@ -173,7 +173,30 @@ export const coachToolDeclarations: FunctionDeclaration[] = [
             engagement: { type: SchemaType.NUMBER },
             wellbeing: { type: SchemaType.NUMBER },
             meaning: { type: SchemaType.NUMBER },
-            date: { type: SchemaType.STRING }
+            date: { type: SchemaType.STRING },
+            exercises: {
+              type: SchemaType.ARRAY,
+              description: "Pour kind=session uniquement : remplace la liste complète des exercices réalisés.",
+              items: {
+                type: SchemaType.OBJECT,
+                properties: {
+                  name: { type: SchemaType.STRING },
+                  sets: {
+                    type: SchemaType.ARRAY,
+                    items: {
+                      type: SchemaType.OBJECT,
+                      properties: {
+                        reps: { type: SchemaType.NUMBER },
+                        weight: { type: SchemaType.NUMBER },
+                        rpe: { type: SchemaType.NUMBER }
+                      },
+                      required: ["reps", "weight"]
+                    }
+                  }
+                },
+                required: ["name", "sets"]
+              }
+            }
           }
         }
       },
@@ -195,6 +218,63 @@ export const coachToolDeclarations: FunctionDeclaration[] = [
         id: { type: SchemaType.STRING }
       },
       required: ["kind", "id"]
+    }
+  },
+  {
+    name: "save_program",
+    description:
+      "Crée ou remplace un programme d'entraînement (onglet Sport). Fournis le programme ENTIER (toutes les séances et exercices), pas seulement la modification : repars de l'état du contexte 'programs', applique le changement, renvoie le tout. Pour MODIFIER un programme existant, fournis son id ; pour en CRÉER un nouveau, omets l'id. Un jour de repos = une séance avec exercises vide.",
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        id: { type: SchemaType.STRING, description: "Id du programme à remplacer (présent dans le contexte programs). Omettre pour créer." },
+        name: { type: SchemaType.STRING, description: "Nom du programme, ex: 'PPL', 'Full Body'." },
+        sessions: {
+          type: SchemaType.ARRAY,
+          description: "Séances/jours du programme, dans l'ordre.",
+          items: {
+            type: SchemaType.OBJECT,
+            properties: {
+              id: { type: SchemaType.STRING, description: "Id existant de la séance si connu (le conserver pour ne pas casser le suivi). Sinon laisser vide, il sera généré." },
+              title: { type: SchemaType.STRING, description: "Titre de la séance, ex: 'Jour 1 — Dos' ou 'Repos'." },
+              exercises: {
+                type: SchemaType.ARRAY,
+                description: "Exercices cibles. Vide pour un jour de repos.",
+                items: {
+                  type: SchemaType.OBJECT,
+                  properties: {
+                    name: { type: SchemaType.STRING },
+                    targetSets: { type: SchemaType.NUMBER, description: "Nombre de séries visées." },
+                    targetReps: { type: SchemaType.NUMBER, description: "Répétitions visées par série." },
+                    targetWeight: { type: SchemaType.NUMBER, description: "Charge cible en kg, optionnel." }
+                  },
+                  required: ["name", "targetSets", "targetReps"]
+                }
+              }
+            },
+            required: ["title", "exercises"]
+          }
+        }
+      },
+      required: ["name", "sessions"]
+    }
+  },
+  {
+    name: "delete_program",
+    description: "Supprime un programme d'entraînement entier. Utilise l'id présent dans le contexte 'programs'.",
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: { id: { type: SchemaType.STRING } },
+      required: ["id"]
+    }
+  },
+  {
+    name: "undo_last",
+    description:
+      "Annule la TOUTE DERNIÈRE écriture que tu as effectuée (création, modification ou suppression), en restaurant l'état précédent. À utiliser quand l'utilisateur dit 'annule', 'reviens en arrière', 'oublie ce que tu viens de faire', 'non finalement'. Ne fonctionne que pour la dernière action ; il n'y a pas d'historique multi-niveaux.",
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {}
     }
   },
   {
@@ -250,6 +330,9 @@ export type CoachToolName =
   | "remove_habit"
   | "update_entry"
   | "delete_entry"
+  | "save_program"
+  | "delete_program"
   | "remember_fact"
   | "update_fact"
-  | "forget_fact";
+  | "forget_fact"
+  | "undo_last";

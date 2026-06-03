@@ -1,7 +1,19 @@
 const DAY = 24 * 60 * 60 * 1000;
 
+/**
+ * Clé jour `YYYY-MM-DD` dans le fuseau LOCAL.
+ * On décale du timezone offset avant `toISOString()`, sinon minuit local
+ * repasse en UTC et fait basculer sur la veille (ex. UTC+2 → recule de 2h).
+ */
 export function toISODate(date: Date) {
-  return date.toISOString().slice(0, 10);
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 10);
+}
+
+/** Clé jour `YYYY-MM-DD` pour aujourd'hui, fuseau local. */
+export function todayISODate() {
+  return toISODate(new Date());
 }
 
 export function daysAgo(days: number) {

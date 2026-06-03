@@ -11,9 +11,12 @@ export type WriteKind =
   | "habit_removed"
   | "entry_updated"
   | "entry_removed"
+  | "program_saved"
+  | "program_removed"
   | "fact_added"
   | "fact_updated"
-  | "fact_removed";
+  | "fact_removed"
+  | "undo";
 
 export interface WriteRecord {
   kind: WriteKind;

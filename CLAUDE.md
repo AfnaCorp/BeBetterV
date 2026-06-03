@@ -1,5 +1,13 @@
 # AthleteOS — guide pour Claude
 
+## Mode de travail (autonomie)
+
+Dans ce workspace, travaille sans t'arrêter pour demander des permissions : exécute les commandes, édite les fichiers et avance jusqu'au bout de la tâche. Le `defaultMode` est réglé sur `bypassPermissions` dans `.claude/settings.local.json`.
+
+Quand tu as un choix à faire (librairie, approche, nommage, valeur par défaut), **choisis l'option la plus recommandée et continue** — ne me pose pas la question. Mentionne brièvement le choix retenu dans ta réponse pour que je puisse le corriger après coup si besoin.
+
+Exceptions où tu **dois** quand même me demander avant : actions destructrices ou difficiles à annuler (suppression de données, force-push, reset hard), et tout ce qui sort vers l'extérieur (déploiement, publication, envoi de données à un service tiers).
+
 ## Produit
 
 Coach de vie / santé agentic. L'utilisateur écrit en langage naturel ("hier 7h de sommeil, 76.4 kg, séance pull faite avec rowing 80kg 3x8") et l'agent extrait les infos et **écrit lui-même** dans le journal, le calendrier et l'historique d'exercices. L'utilisateur n'a (presque) pas de formulaire à remplir.

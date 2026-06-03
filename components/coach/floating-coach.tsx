@@ -3,14 +3,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MessageCircle, X } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
+import { useAppData } from "@/components/app-data-provider";
+import { DEFAULT_COACH_NAME } from "@/lib/coach-avatars";
+import { CoachAvatarBadge } from "./coach-avatar";
 import { CoachChat } from "./coach-chat";
 
 const STORAGE_KEY = "coach-bubble-position";
-const BUBBLE_SIZE = 56;
+const BUBBLE_SIZE = 80;
 const MARGIN = 12;
 const DRAG_THRESHOLD = 4;
-const PANEL_WIDTH = 380;
-const PANEL_MAX_HEIGHT = 560;
+const PANEL_WIDTH = 440;
+const PANEL_MAX_HEIGHT = 680;
 const PANEL_GAP = 12;
 
 type Position = { x: number; y: number };
@@ -42,6 +45,8 @@ function defaultPosition(): Position {
 
 export function FloatingCoach() {
   const { user } = useAuth();
+  const { profile } = useAppData();
+  const coachName = profile?.coachName?.trim() || DEFAULT_COACH_NAME;
   const [mounted, setMounted] = useState(false);
   const [position, setPosition] = useState<Position>({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
@@ -225,15 +230,8 @@ export function FloatingCoach() {
 
             <div className="mb-2 flex items-center justify-between px-1">
               <div className="flex items-center gap-2">
-                <span className="gradient-accent grid h-7 w-7 place-items-center rounded-full text-white">
-                  <MessageCircle className="h-3.5 w-3.5" />
-                </span>
-                <div className="leading-tight">
-                  <p className="text-sm font-semibold text-foreground">Coach</p>
-                  <p className="text-[10px] uppercase tracking-widest text-muted-foreground">
-                    Pop-up · parle-moi
-                  </p>
-                </div>
+                <CoachAvatarBadge avatarId={profile?.coachAvatar} size={32} />
+                <p className="text-sm font-semibold text-foreground">{coachName}</p>
               </div>
               <button
                 type="button"
@@ -251,40 +249,42 @@ export function FloatingCoach() {
         </>
       )}
 
-      <button
-        type="button"
-        aria-label={open ? "Fermer le coach" : "Ouvrir le coach"}
-        aria-expanded={open}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={(e) => {
-          if (dragState.current?.pointerId === e.pointerId) {
-            dragState.current = null;
-            setDragging(false);
-            setPosition((p) => {
-              const snapped = snap(p);
-              persist(snapped);
-              return snapped;
-            });
-          }
-        }}
-        style={{
-          position: "fixed",
-          left: position.x,
-          top: position.y,
-          width: BUBBLE_SIZE,
-          height: BUBBLE_SIZE,
-          touchAction: "none",
-          zIndex: 70,
-          transition: dragging
-            ? "none"
-            : "left 260ms cubic-bezier(0.34, 1.4, 0.5, 1), top 200ms ease-out, transform 120ms ease"
-        }}
-        className="grid place-items-center rounded-full bg-accent-gradient text-white shadow-glow active:scale-95"
-      >
-        {open ? <X className="h-5 w-5" /> : <MessageCircle className="h-5 w-5" />}
-      </button>
+      {!open && (
+        <button
+          type="button"
+          aria-label="Ouvrir le coach"
+          aria-expanded={open}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={(e) => {
+            if (dragState.current?.pointerId === e.pointerId) {
+              dragState.current = null;
+              setDragging(false);
+              setPosition((p) => {
+                const snapped = snap(p);
+                persist(snapped);
+                return snapped;
+              });
+            }
+          }}
+          style={{
+            position: "fixed",
+            left: position.x,
+            top: position.y,
+            width: BUBBLE_SIZE,
+            height: BUBBLE_SIZE,
+            touchAction: "none",
+            zIndex: 70,
+            transition: dragging
+              ? "none"
+              : "left 260ms cubic-bezier(0.34, 1.4, 0.5, 1), top 200ms ease-out, transform 120ms ease"
+          }}
+          className="grid place-items-center rounded-full bg-accent-gradient text-white shadow-glow active:scale-95"
+        >
+          <MessageCircle className="h-8 w-8" />
+        </button>
+      )}
 
       <style jsx global>{`
         @keyframes coachPopIn {
