@@ -156,10 +156,19 @@ function formatDayLabel(iso: string) {
 /** Jours de la semaine, lundi = index 0 (ordre des séances du programme). */
 const WEEKDAYS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"] as const;
 
-/** Un jour est un repos s'il est marqué `rest`, ou (legacy) s'il n'a aucun exercice nommé. */
+/**
+ * Statut "repos" déclaré du jour (pour l'éditeur / le toggle). Le flag explicite
+ * `rest` prime quand il est défini ; sinon (legacy) on déduit du nombre d'exos.
+ */
 function isRestDay(session: ProgramSession): boolean {
-  if (session.rest) return true;
-  return session.exercises.filter((e) => e.name.trim()).length === 0;
+  if (typeof session.rest === "boolean") return session.rest;
+  return session.exercises.length === 0;
+}
+
+/** Le jour propose-t-il une vraie séance à réaliser (pas repos, au moins un exo nommé) ? */
+function hasPlannedSession(session: ProgramSession): boolean {
+  if (session.rest) return false;
+  return session.exercises.some((e) => e.name.trim());
 }
 
 /**
@@ -169,7 +178,7 @@ function isRestDay(session: ProgramSession): boolean {
 function plannedFor(program: ProgramTemplate, day: Date): ProgramSession | undefined {
   const idx = (day.getDay() + 6) % 7; // 0 = lundi
   const s = program.sessions[idx];
-  return s && !isRestDay(s) ? s : undefined;
+  return s && hasPlannedSession(s) ? s : undefined;
 }
 
 // ─── Vue frise (sélecteur de date + détail du jour) ──────────────────────────
@@ -513,17 +522,19 @@ function SessionBlock({
     onChange({ ...session, exercises });
   }
 
-  /** Bascule repos ⇄ séance. En repos, on vide les exercices ; en séance, on en pré-ajoute un. */
+  /**
+   * Bascule repos ⇄ séance via le seul flag `rest` — on ne touche jamais aux
+   * exercices, pour qu'un aller-retour Repos → Séance les conserve. En passant
+   * en séance sur un jour vide, on pré-ajoute une ligne pour démarrer la saisie.
+   */
   function setRest(rest: boolean) {
-    if (rest) {
-      onChange({ ...session, rest: true, exercises: [] });
-    } else {
-      onChange({
-        ...session,
-        rest: false,
-        exercises: session.exercises.length ? session.exercises : [{ name: "", targetSets: 3, targetReps: 8 }],
-      });
-    }
+    onChange({
+      ...session,
+      rest,
+      exercises: !rest && session.exercises.length === 0
+        ? [{ name: "", targetSets: 3, targetReps: 8 }]
+        : session.exercises,
+    });
     setOpen(true);
   }
 
@@ -661,11 +672,16 @@ function ProgramEditor({
     });
   }
 
-  /** Nettoie le draft avant sauvegarde : retire les exos sans nom, fige le flag repos. */
+  /**
+   * Nettoie le draft avant sauvegarde : retire les lignes d'exos sans nom (mais
+   * conserve les exos nommés, même sur un jour repos, pour un futur retour en
+   * séance). Le statut repos suit le flag explicite ; à défaut, on le déduit.
+   */
   function save() {
     const sessions = draft.sessions.map((s) => {
       const exercises = s.exercises.filter((e) => e.name.trim());
-      return { ...s, exercises, rest: exercises.length === 0 };
+      const rest = typeof s.rest === "boolean" ? s.rest : exercises.length === 0;
+      return { ...s, exercises, rest };
     });
     onSave({ ...draft, name: draft.name.trim(), sessions });
   }
