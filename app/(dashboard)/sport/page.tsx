@@ -16,6 +16,7 @@ import {
   ChevronLeft,
   Minus,
   Search,
+  Repeat,
 } from "lucide-react";
 import { useAppData } from "@/components/app-data-provider";
 import { CoachWriteBanner } from "@/components/coach/coach-write-banner";
@@ -152,11 +153,23 @@ function formatDayLabel(iso: string) {
   return d.toLocaleDateString("fr-FR", { weekday: "long", day: "2-digit", month: "long" });
 }
 
-/** Séance planifiée du programme pour un jour donné (lundi = index 0). */
+/** Jours de la semaine, lundi = index 0 (ordre des séances du programme). */
+const WEEKDAYS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"] as const;
+
+/** Un jour est un repos s'il est marqué `rest`, ou (legacy) s'il n'a aucun exercice nommé. */
+function isRestDay(session: ProgramSession): boolean {
+  if (session.rest) return true;
+  return session.exercises.filter((e) => e.name.trim()).length === 0;
+}
+
+/**
+ * Séance planifiée du programme pour un jour donné. Le programme est une semaine
+ * fixe : lundi = index 0 … dimanche = index 6, identique chaque semaine.
+ */
 function plannedFor(program: ProgramTemplate, day: Date): ProgramSession | undefined {
   const idx = (day.getDay() + 6) % 7; // 0 = lundi
   const s = program.sessions[idx];
-  return s && s.exercises.length > 0 ? s : undefined;
+  return s && !isRestDay(s) ? s : undefined;
 }
 
 // ─── Vue frise (sélecteur de date + détail du jour) ──────────────────────────
@@ -326,13 +339,68 @@ function DoneSessionCard({ session, onRedo }: { session: SessionEntry; onRedo: (
 
 // ─── Éditeur de programme ──────────────────────────────────────────────────────
 
+/** Petit champ numérique compact et labellisé pour l'éditeur de programme. */
+function TargetField({
+  label,
+  value,
+  onChange,
+  step = 1,
+  min = 0,
+  placeholder,
+}: {
+  label: string;
+  value: number | undefined;
+  onChange: (v: number | undefined) => void;
+  step?: number;
+  min?: number;
+  placeholder?: string;
+}) {
+  const dec = () => onChange(Math.max(min, Math.round(((value ?? min) - step) * 100) / 100));
+  const inc = () => onChange(Math.round(((value ?? min) + step) * 100) / 100);
+  return (
+    <div className="flex flex-1 flex-col items-center gap-1">
+      <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{label}</span>
+      <div className="flex w-full items-center justify-between gap-0.5 rounded-lg neu-inset px-1 py-0.5">
+        <button
+          type="button"
+          onClick={dec}
+          className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-muted-foreground active:bg-muted"
+          aria-label={`Diminuer ${label}`}
+        >
+          <Minus className="h-3 w-3" />
+        </button>
+        <input
+          type="number"
+          inputMode="decimal"
+          min={min}
+          step={step}
+          value={value ?? ""}
+          placeholder={placeholder}
+          onChange={(e) => onChange(e.target.value === "" ? undefined : Number(e.target.value))}
+          className="w-full min-w-0 bg-transparent text-center text-sm font-semibold text-foreground outline-none [appearance:textfield] placeholder:text-muted-foreground/50 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+        />
+        <button
+          type="button"
+          onClick={inc}
+          className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-muted-foreground active:bg-muted"
+          aria-label={`Augmenter ${label}`}
+        >
+          <Plus className="h-3 w-3" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ExerciseRow({
+  index,
   ex,
   onChange,
   onRemove,
   onMoveUp,
   onMoveDown,
 }: {
+  index: number;
   ex: ProgramExercise;
   onChange: (updated: ProgramExercise) => void;
   onRemove: () => void;
@@ -340,84 +408,91 @@ function ExerciseRow({
   onMoveDown?: () => void;
 }) {
   return (
-    <div className="rounded-xl neu-inset px-3 py-2">
+    <div className="rounded-2xl bg-card/70 p-3 ring-1 ring-border/50">
       <div className="flex items-center gap-2">
-        <div className="flex flex-col">
-          <button
-            onClick={onMoveUp}
-            disabled={!onMoveUp}
-            className="text-muted-foreground hover:text-foreground disabled:opacity-20"
-          >
-            <ArrowUp className="h-3 w-3" />
-          </button>
-          <button
-            onClick={onMoveDown}
-            disabled={!onMoveDown}
-            className="text-muted-foreground hover:text-foreground disabled:opacity-20"
-          >
-            <ArrowDown className="h-3 w-3" />
-          </button>
-        </div>
+        <span className="grid h-6 w-6 shrink-0 place-items-center rounded-lg bg-muted text-[11px] font-bold text-muted-foreground">
+          {index + 1}
+        </span>
         <Input
-          className="flex-1 border-none bg-transparent p-0 text-sm shadow-none focus-visible:ring-0"
+          className="flex-1 border-none bg-transparent p-0 text-sm font-medium shadow-none focus-visible:ring-0"
           placeholder="Nom de l'exercice"
           value={ex.name}
           onChange={(e) => onChange({ ...ex, name: e.target.value })}
         />
-        <button onClick={onRemove} className="shrink-0 text-muted-foreground hover:text-destructive">
-          <X className="h-3.5 w-3.5" />
-        </button>
+        <div className="flex shrink-0 items-center">
+          <button
+            onClick={onMoveUp}
+            disabled={!onMoveUp}
+            className="grid h-7 w-6 place-items-center text-muted-foreground hover:text-foreground disabled:opacity-20"
+            aria-label="Monter"
+          >
+            <ArrowUp className="h-3.5 w-3.5" />
+          </button>
+          <button
+            onClick={onMoveDown}
+            disabled={!onMoveDown}
+            className="grid h-7 w-6 place-items-center text-muted-foreground hover:text-foreground disabled:opacity-20"
+            aria-label="Descendre"
+          >
+            <ArrowDown className="h-3.5 w-3.5" />
+          </button>
+          <button
+            onClick={onRemove}
+            className="grid h-7 w-6 place-items-center text-muted-foreground hover:text-destructive"
+            aria-label="Supprimer l'exercice"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
       </div>
-      <div className="mt-1.5 flex items-center gap-1 pl-7 text-xs text-muted-foreground">
-        <Input
-          type="number"
-          min={1}
-          className="w-11 border-none bg-transparent p-0 text-center text-sm shadow-none focus-visible:ring-0"
+      <div className="mt-2.5 flex items-end gap-2 pl-8">
+        <TargetField
+          label="Séries"
           value={ex.targetSets}
-          onChange={(e) => onChange({ ...ex, targetSets: Number(e.target.value) })}
-        />
-        <span>séries</span>
-        <span>×</span>
-        <Input
-          type="number"
           min={1}
-          className="w-11 border-none bg-transparent p-0 text-center text-sm shadow-none focus-visible:ring-0"
+          onChange={(v) => onChange({ ...ex, targetSets: v ?? 1 })}
+        />
+        <TargetField
+          label="Reps"
           value={ex.targetReps}
-          onChange={(e) => onChange({ ...ex, targetReps: Number(e.target.value) })}
+          min={1}
+          onChange={(v) => onChange({ ...ex, targetReps: v ?? 1 })}
         />
-        <span>reps</span>
-        <span className="mx-1">·</span>
-        <Input
-          type="number"
-          min={0}
+        <TargetField
+          label="Kg"
+          value={ex.targetWeight}
           step={2.5}
-          className="w-12 border-none bg-transparent p-0 text-center text-sm shadow-none focus-visible:ring-0"
           placeholder="—"
-          value={ex.targetWeight ?? ""}
-          onChange={(e) => onChange({ ...ex, targetWeight: e.target.value ? Number(e.target.value) : undefined })}
+          onChange={(v) => onChange({ ...ex, targetWeight: v })}
         />
-        <span>kg</span>
       </div>
     </div>
   );
 }
 
 function SessionBlock({
+  dayLabel,
   session,
+  defaultOpen,
   onChange,
-  onRemove,
 }: {
+  dayLabel: string;
   session: ProgramSession;
+  defaultOpen: boolean;
   onChange: (s: ProgramSession) => void;
-  onRemove: () => void;
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(defaultOpen);
+  const dayShort = dayLabel.slice(0, 3); // Lun, Mar…
+  const isRest = isRestDay(session);
+  const namedExercises = session.exercises.filter((e) => e.name.trim());
 
   function addExercise() {
     onChange({
       ...session,
+      rest: false,
       exercises: [...session.exercises, { name: "", targetSets: 3, targetReps: 8 }],
     });
+    setOpen(true);
   }
 
   function updateExercise(i: number, ex: ProgramExercise) {
@@ -438,41 +513,120 @@ function SessionBlock({
     onChange({ ...session, exercises });
   }
 
+  /** Bascule repos ⇄ séance. En repos, on vide les exercices ; en séance, on en pré-ajoute un. */
+  function setRest(rest: boolean) {
+    if (rest) {
+      onChange({ ...session, rest: true, exercises: [] });
+    } else {
+      onChange({
+        ...session,
+        rest: false,
+        exercises: session.exercises.length ? session.exercises : [{ name: "", targetSets: 3, targetReps: 8 }],
+      });
+    }
+    setOpen(true);
+  }
+
+  const totalSets = namedExercises.reduce((acc, ex) => acc + (ex.targetSets || 0), 0);
+
   return (
-    <div className="rounded-2xl neu-surface-sm overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-3">
-        <Input
-          className="flex-1 border-none bg-transparent p-0 font-semibold shadow-none focus-visible:ring-0"
-          placeholder="Nom de la séance (ex: Push A)"
-          value={session.title}
-          onChange={(e) => onChange({ ...session, title: e.target.value })}
+    <div
+      className={`overflow-hidden rounded-2xl transition ${
+        isRest ? "bg-muted/40 ring-1 ring-border/40" : "neu-surface-sm"
+      }`}
+    >
+      {/* En-tête : badge jour de semaine + titre + chevron */}
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left"
+        aria-expanded={open}
+      >
+        <span
+          className={`grid h-10 w-10 shrink-0 place-items-center rounded-2xl ${
+            isRest ? "bg-muted text-muted-foreground" : "bg-accent-gradient text-white shadow-sm"
+          }`}
+        >
+          <span className="text-[11px] font-bold uppercase leading-none">{dayShort}</span>
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center gap-1.5">
+            <span className="truncate text-sm font-semibold text-foreground">{dayLabel}</span>
+            {isRest && <Moon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+          </span>
+          <span className="block truncate text-xs text-muted-foreground">
+            {isRest
+              ? session.title && session.title !== "Repos"
+                ? session.title
+                : "Repos"
+              : `${session.title ? session.title + " · " : ""}${
+                  namedExercises.length === 0
+                    ? "séance vide"
+                    : `${namedExercises.length} exo${namedExercises.length > 1 ? "s" : ""} · ${totalSets} série${totalSets > 1 ? "s" : ""}`
+                }`}
+          </span>
+        </span>
+        <ChevronDown
+          className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`}
         />
-        <button onClick={() => setOpen((o) => !o)} className="text-muted-foreground">
-          {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-        </button>
-        <button onClick={onRemove} className="text-muted-foreground hover:text-destructive">
-          <Trash2 className="h-4 w-4" />
-        </button>
-      </div>
+      </button>
 
       {open && (
-        <div className="space-y-2 px-4 pb-4">
-          {session.exercises.map((ex, i) => (
-            <ExerciseRow
-              key={i}
-              ex={ex}
-              onChange={(updated) => updateExercise(i, updated)}
-              onRemove={() => removeExercise(i)}
-              onMoveUp={i > 0 ? () => moveExercise(i, -1) : undefined}
-              onMoveDown={i < session.exercises.length - 1 ? () => moveExercise(i, 1) : undefined}
-            />
-          ))}
-          <button
-            onClick={addExercise}
-            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-          >
-            <Plus className="h-3.5 w-3.5" /> Ajouter un exercice
-          </button>
+        <div className="space-y-2.5 border-t border-border/40 px-3 pb-3 pt-3">
+          {/* Bascule Séance / Repos */}
+          <div className="flex rounded-xl bg-muted/60 p-0.5">
+            <button
+              onClick={() => setRest(false)}
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-semibold transition ${
+                !isRest ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"
+              }`}
+            >
+              <Dumbbell className="h-3.5 w-3.5" /> Séance
+            </button>
+            <button
+              onClick={() => setRest(true)}
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-semibold transition ${
+                isRest ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"
+              }`}
+            >
+              <Moon className="h-3.5 w-3.5" /> Repos
+            </button>
+          </div>
+
+          <Input
+            className="neu-inset rounded-xl border-none px-3 text-sm font-medium shadow-none focus-visible:ring-0"
+            placeholder={isRest ? "Nom (optionnel — ex: Cardio léger…)" : "Nom de la séance (ex: Push A)"}
+            value={session.title}
+            onChange={(e) => onChange({ ...session, title: e.target.value })}
+          />
+
+          {!isRest && (
+            <>
+              {session.exercises.map((ex, i) => (
+                <ExerciseRow
+                  key={i}
+                  index={i}
+                  ex={ex}
+                  onChange={(updated) => updateExercise(i, updated)}
+                  onRemove={() => removeExercise(i)}
+                  onMoveUp={i > 0 ? () => moveExercise(i, -1) : undefined}
+                  onMoveDown={i < session.exercises.length - 1 ? () => moveExercise(i, 1) : undefined}
+                />
+              ))}
+              <button
+                onClick={addExercise}
+                className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-muted py-2.5 text-xs font-medium text-primary transition hover:border-primary hover:bg-primary/5"
+              >
+                <Plus className="h-3.5 w-3.5" /> Ajouter un exercice
+              </button>
+            </>
+          )}
+
+          {isRest && (
+            <p className="flex items-center gap-2 py-1 text-xs text-muted-foreground">
+              <Moon className="h-3.5 w-3.5 shrink-0" />
+              Aucune séance ce jour — récupération.
+            </p>
+          )}
         </div>
       )}
     </div>
@@ -488,63 +642,105 @@ function ProgramEditor({
   onSave: (draft: Omit<ProgramTemplate, "id" | "createdAt">) => void;
   onCancel: () => void;
 }) {
-  const [draft, setDraft] = useState(initial);
+  // Programme = semaine fixe de 7 jours (Lundi…Dimanche). On normalise le draft
+  // pour toujours avoir exactement 7 sessions, dans l'ordre des jours.
+  const [draft, setDraft] = useState<Omit<ProgramTemplate, "id" | "createdAt">>(() => {
+    const sessions = WEEKDAYS.map((_, i) => {
+      const existing = initial.sessions[i];
+      if (existing) return existing;
+      return { id: crypto.randomUUID(), title: "", rest: true, exercises: [] };
+    });
+    return { ...initial, sessions };
+  });
 
-  function addSession() {
-    setDraft({
-      ...draft,
-      sessions: [...draft.sessions, { id: crypto.randomUUID(), title: "", exercises: [] }],
+  function updateSession(i: number, s: ProgramSession) {
+    setDraft((d) => {
+      const sessions = [...d.sessions];
+      sessions[i] = s;
+      return { ...d, sessions };
     });
   }
 
-  function updateSession(i: number, s: ProgramSession) {
-    const sessions = [...draft.sessions];
-    sessions[i] = s;
-    setDraft({ ...draft, sessions });
+  /** Nettoie le draft avant sauvegarde : retire les exos sans nom, fige le flag repos. */
+  function save() {
+    const sessions = draft.sessions.map((s) => {
+      const exercises = s.exercises.filter((e) => e.name.trim());
+      return { ...s, exercises, rest: exercises.length === 0 };
+    });
+    onSave({ ...draft, name: draft.name.trim(), sessions });
   }
 
-  function removeSession(i: number) {
-    setDraft({ ...draft, sessions: draft.sessions.filter((_, idx) => idx !== i) });
-  }
+  const trainingDays = draft.sessions.filter((s) => !isRestDay(s)).length;
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <button onClick={onCancel} className="text-muted-foreground hover:text-foreground">
+    <div className="flex min-h-[100dvh] flex-col">
+      {/* Header sticky */}
+      <header className="sticky top-0 z-20 -mx-4 flex items-center gap-2 border-b border-border/50 bg-background/85 px-4 py-3 backdrop-blur sm:-mx-5 sm:px-5">
+        <button
+          onClick={onCancel}
+          className="grid h-9 w-9 shrink-0 place-items-center rounded-xl neu-pressable text-muted-foreground"
+          aria-label="Retour"
+        >
           <ChevronLeft className="h-5 w-5" />
         </button>
-        <Input
-          className="flex-1 text-lg font-semibold"
-          placeholder="Nom du programme (ex: PPL, Full Body...)"
-          value={draft.name}
-          onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-        />
-      </div>
+        <h1 className="flex-1 truncate text-base font-semibold text-foreground">
+          {initial.name ? "Modifier le programme" : "Nouveau programme"}
+        </h1>
+        <Button size="sm" onClick={save} disabled={!draft.name.trim()}>
+          <Check className="mr-1.5 h-4 w-4" /> Enregistrer
+        </Button>
+      </header>
 
-      <div className="space-y-3">
-        {draft.sessions.map((s, i) => (
-          <SessionBlock
-            key={s.id}
-            session={s}
-            onChange={(updated) => updateSession(i, updated)}
-            onRemove={() => removeSession(i)}
+      <div className="space-y-5 py-5 pb-28">
+        {/* Carte réglages : nom du programme */}
+        <div className="rounded-2xl neu-surface p-4">
+          <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Nom du programme
+          </label>
+          <Input
+            className="text-base font-semibold"
+            placeholder="ex: PPL, Full Body…"
+            value={draft.name}
+            onChange={(e) => setDraft({ ...draft, name: e.target.value })}
           />
-        ))}
+          <p className="mt-2 flex items-start gap-1.5 text-xs text-muted-foreground">
+            <Repeat className="mt-0.5 h-3 w-3 shrink-0" />
+            <span>
+              Programme hebdomadaire :{" "}
+              <strong className="text-foreground">
+                {trainingDays} jour{trainingDays > 1 ? "s" : ""} d&apos;entraînement
+              </strong>{" "}
+              par semaine, identique chaque semaine.
+            </span>
+          </p>
+        </div>
+
+        {/* Les 7 jours de la semaine */}
+        <div className="space-y-1.5">
+          <p className="px-1 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+            La semaine
+          </p>
+          <div className="space-y-2.5">
+            {draft.sessions.map((s, i) => (
+              <SessionBlock
+                key={s.id}
+                dayLabel={WEEKDAYS[i]}
+                session={s}
+                defaultOpen={false}
+                onChange={(updated) => updateSession(i, updated)}
+              />
+            ))}
+          </div>
+        </div>
       </div>
 
-      <button
-        onClick={addSession}
-        className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-muted px-4 py-3 text-sm text-muted-foreground transition hover:border-primary hover:text-foreground"
-      >
-        <Plus className="h-4 w-4" /> Ajouter une séance
-      </button>
-
-      <div className="flex justify-end gap-2">
-        <Button variant="ghost" onClick={onCancel}>
+      {/* Footer sticky : enregistrer / annuler */}
+      <div className="sticky bottom-0 z-20 -mx-4 mt-auto flex gap-2 border-t border-border/50 bg-background/85 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur sm:-mx-5 sm:px-5">
+        <Button variant="ghost" className="flex-1" onClick={onCancel}>
           Annuler
         </Button>
-        <Button onClick={() => onSave(draft)} disabled={!draft.name.trim()}>
-          <Check className="mr-1.5 h-4 w-4" /> Enregistrer
+        <Button className="flex-[2]" size="lg" onClick={save} disabled={!draft.name.trim()}>
+          <Check className="mr-1.5 h-4 w-4" /> Enregistrer le programme
         </Button>
       </div>
     </div>
@@ -1096,7 +1292,7 @@ function redoSessionFromEntry(entry: SessionEntry): ProgramSession {
 }
 
 export default function SportPage() {
-  const { addSession, addProgram, updateProgram, clearProgramDraft, removeProgram, programs, sessions, ready } = useAppData();
+  const { addSession, addProgram, updateProgram, clearProgramDraft, programs, sessions, ready } = useAppData();
   const [active, setActive] = useState<{ programId: string; session: ProgramSession; programName: string } | null>(null);
   const [editing, setEditing] = useState<{ id: string | null; initial: Omit<ProgramTemplate, "id" | "createdAt"> } | null>(null);
 
@@ -1215,46 +1411,11 @@ export default function SportPage() {
           </CardContent>
         </Card>
       ) : (
-        <>
-          <p className="-mt-3 text-sm text-muted-foreground">{program.name}</p>
-          <TimelineView
-            program={program}
-            renderPlanned={(session) => renderSession(program, session, true)}
-            onRedo={(entry) => handleStartSession(redoSessionFromEntry(entry), program)}
-          />
-
-          {programs.length > 1 && (
-            <div className="space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                Autres programmes
-              </p>
-              {programs.slice(1).map((p) => (
-                <div key={p.id} className="flex items-center justify-between rounded-xl neu-surface-sm px-3 py-2.5">
-                  <span className="text-sm font-medium text-foreground">{p.name}</span>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setEditing({ id: p.id, initial: { name: p.name, sessions: JSON.parse(JSON.stringify(p.sessions)) } })}
-                      className="text-muted-foreground hover:text-foreground"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </button>
-                    <button onClick={() => removeProgram(p.id)} className="text-muted-foreground hover:text-destructive">
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <Button
-            onClick={() => setEditing({ id: null, initial: { name: "", sessions: [] } })}
-            className="w-full"
-            variant="outline"
-          >
-            <Plus className="mr-2 h-4 w-4" /> Nouveau programme
-          </Button>
-        </>
+        <TimelineView
+          program={program}
+          renderPlanned={(session) => renderSession(program, session, true)}
+          onRedo={(entry) => handleStartSession(redoSessionFromEntry(entry), program)}
+        />
       )}
     </div>
   );
