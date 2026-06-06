@@ -2,13 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BookOpen, Dumbbell, TrendingUp } from "lucide-react";
+import { BarChart3, BookOpen, Dumbbell } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 
 const navItems = [
   { href: "/journal", label: "Journal", icon: BookOpen },
   { href: "/sport", label: "Sport", icon: Dumbbell },
-  { href: "/progression", label: "Progression", icon: TrendingUp }
+  { href: "/progression", label: "Analyse", icon: BarChart3 }
 ];
 
 export function Sidebar() {

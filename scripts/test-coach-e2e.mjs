@@ -45,7 +45,7 @@ const { idToken } = await exchange.json();
 console.log("ID token obtained (len:", idToken.length, ")");
 
 // 3. Pre-clean test sub-collections so we observe fresh state
-for (const c of ["weights", "sleep", "meals", "sessions", "dayLogs", "facts", "messages"]) {
+for (const c of ["weights", "sleep", "meals", "sessions", "dayLogs", "habits", "facts", "wiki", "messages", "programs"]) {
   const snap = await db.collection("users").doc(uid).collection(c).get();
   await Promise.all(snap.docs.map((d) => d.ref.delete()));
 }
@@ -74,7 +74,10 @@ const resp = await fetch(`${baseUrl}/api/coach`, {
       recentMeals: [],
       recentSessions: [],
       recentDayLogs: [],
-      facts: []
+      recentHabits: [],
+      facts: [],
+      wiki: null,
+      programs: []
     }
   })
 });
@@ -90,7 +93,7 @@ console.log("--- WRITES (from API response) ---");
 (body.writes ?? []).forEach((w) => console.log(" •", w.kind, "·", w.summary));
 
 console.log("\n--- VERIFICATION (direct Firestore reads) ---");
-for (const c of ["weights", "sleep", "meals", "sessions", "dayLogs", "facts", "messages"]) {
+for (const c of ["weights", "sleep", "meals", "sessions", "dayLogs", "habits", "facts", "wiki", "messages", "programs"]) {
   const snap = await db.collection("users").doc(uid).collection(c).get();
   console.log(` ${c}: ${snap.size} docs`);
   snap.docs.forEach((d) => {

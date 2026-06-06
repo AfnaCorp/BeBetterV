@@ -24,14 +24,26 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { DEFAULT_PROGRAM } from "@/lib/default-program";
+import {
+  exercisesByGroup,
+  getExercise,
+  searchExercises,
+} from "@/lib/exercise-bank";
 import { toISODate } from "@/lib/utils/dates";
 import type {
+  ExerciseDef,
+  MuscleGroup,
   ProgramDraft,
   ProgramExercise,
   ProgramSession,
   ProgramTemplate,
   SessionEntry,
 } from "@/types";
+import {
+  MUSCLE_GROUP_LABELS,
+  MUSCLE_GROUP_ORDER,
+  MUSCLE_TO_GROUP,
+} from "@/types/muscle";
 
 // ─── Difficulté (3 niveaux, stockés en RPE) ──────────────────────────────────
 
@@ -169,6 +181,52 @@ function isRestDay(session: ProgramSession): boolean {
 function hasPlannedSession(session: ProgramSession): boolean {
   if (session.rest) return false;
   return session.exercises.some((e) => e.name.trim());
+}
+
+interface GroupVolume {
+  group: MuscleGroup;
+  /** Nombre de jours de la semaine où le groupe est sollicité (en muscle primaire). */
+  days: number;
+  /** Total de séries ciblant ce groupe (primaire = plein, secondaire = demi-compté). */
+  sets: number;
+}
+
+/**
+ * Agrège le volume hebdomadaire par grand groupe musculaire à partir des séances.
+ * Un exo lié à la banque compte ses séries sur ses groupes primaires (×1) et
+ * secondaires (×0.5, arrondi). Les exos non liés sont ignorés (pas de muscles).
+ */
+function weeklyMuscleVolume(sessions: ProgramSession[]): GroupVolume[] {
+  const setsByGroup = new Map<MuscleGroup, number>();
+  const daysByGroup = new Map<MuscleGroup, Set<number>>();
+
+  sessions.forEach((session, dayIdx) => {
+    if (session.rest) return;
+    for (const ex of session.exercises) {
+      const def = getExercise(ex.exerciseId);
+      if (!def) continue;
+      const sets = ex.targetSets || 0;
+      const primaryGroups = new Set(def.primary.map((m) => MUSCLE_TO_GROUP[m]));
+      const secondaryGroups = new Set(
+        (def.secondary ?? []).map((m) => MUSCLE_TO_GROUP[m])
+      );
+      for (const g of primaryGroups) {
+        setsByGroup.set(g, (setsByGroup.get(g) ?? 0) + sets);
+        if (!daysByGroup.has(g)) daysByGroup.set(g, new Set());
+        daysByGroup.get(g)!.add(dayIdx);
+      }
+      for (const g of secondaryGroups) {
+        if (primaryGroups.has(g)) continue; // déjà compté en plein
+        setsByGroup.set(g, (setsByGroup.get(g) ?? 0) + Math.round(sets / 2));
+      }
+    }
+  });
+
+  return MUSCLE_GROUP_ORDER.map((group) => ({
+    group,
+    days: daysByGroup.get(group)?.size ?? 0,
+    sets: setsByGroup.get(group) ?? 0,
+  }));
 }
 
 /**
@@ -416,18 +474,22 @@ function ExerciseRow({
   onMoveUp?: () => void;
   onMoveDown?: () => void;
 }) {
+  const def = getExercise(ex.exerciseId);
+  const primaryGroups = def
+    ? Array.from(new Set(def.primary.map((m) => MUSCLE_GROUP_LABELS[MUSCLE_TO_GROUP[m]])))
+    : [];
   return (
     <div className="rounded-2xl bg-card/70 p-3 ring-1 ring-border/50">
       <div className="flex items-center gap-2">
         <span className="grid h-6 w-6 shrink-0 place-items-center rounded-lg bg-muted text-[11px] font-bold text-muted-foreground">
           {index + 1}
         </span>
-        <Input
-          className="flex-1 border-none bg-transparent p-0 text-sm font-medium shadow-none focus-visible:ring-0"
-          placeholder="Nom de l'exercice"
-          value={ex.name}
-          onChange={(e) => onChange({ ...ex, name: e.target.value })}
-        />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-foreground">{ex.name}</p>
+          {primaryGroups.length > 0 && (
+            <p className="truncate text-[11px] text-muted-foreground">{primaryGroups.join(" · ")}</p>
+          )}
+        </div>
         <div className="flex shrink-0 items-center">
           <button
             onClick={onMoveUp}
@@ -479,6 +541,112 @@ function ExerciseRow({
   );
 }
 
+/** Bottom-sheet de sélection d'un exercice dans la banque (recherche + filtre groupe). */
+function ExerciseBankPicker({
+  existingIds,
+  onPick,
+  onClose,
+}: {
+  existingIds: string[];
+  onPick: (def: ExerciseDef) => void;
+  onClose: () => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [group, setGroup] = useState<MuscleGroup | null>(null);
+  const existing = new Set(existingIds);
+
+  const results = useMemo(() => {
+    let list = searchExercises(query);
+    if (group) {
+      const ids = new Set(exercisesByGroup(group).map((e) => e.id));
+      list = list.filter((e) => ids.has(e.id));
+    }
+    return list;
+  }, [query, group]);
+
+  return (
+    <div className="fixed inset-0 z-[90] flex flex-col justify-end" role="dialog" aria-modal="true">
+      <button className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} aria-label="Fermer" />
+      <div className="relative flex max-h-[85vh] flex-col rounded-t-3xl bg-card pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl">
+        <div className="flex items-center justify-between gap-2 px-5 pb-3 pt-4">
+          <h3 className="text-base font-semibold text-foreground">Banque d&apos;exercices</h3>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="px-5">
+          <div className="flex items-center gap-2 rounded-xl neu-inset px-3 py-2">
+            <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Rechercher un exercice…"
+              className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+            />
+          </div>
+        </div>
+
+        {/* Filtres par groupe musculaire */}
+        <div className="-mx-1 mt-3 flex gap-1.5 overflow-x-auto px-5 pb-1 [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: "none" }}>
+          <button
+            onClick={() => setGroup(null)}
+            className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium transition ${
+              group === null ? "bg-accent-gradient text-white" : "neu-surface-sm text-muted-foreground"
+            }`}
+          >
+            Tous
+          </button>
+          {MUSCLE_GROUP_ORDER.map((g) => (
+            <button
+              key={g}
+              onClick={() => setGroup(g)}
+              className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium transition ${
+                group === g ? "bg-accent-gradient text-white" : "neu-surface-sm text-muted-foreground"
+              }`}
+            >
+              {MUSCLE_GROUP_LABELS[g]}
+            </button>
+          ))}
+        </div>
+
+        <div className="mt-3 flex-1 space-y-1 overflow-y-auto px-3 pb-2">
+          {results.map((def) => {
+            const already = existing.has(def.id);
+            const groups = Array.from(new Set(def.primary.map((m) => MUSCLE_GROUP_LABELS[MUSCLE_TO_GROUP[m]])));
+            return (
+              <button
+                key={def.id}
+                onClick={() => onPick(def)}
+                className="flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left transition hover:bg-muted/40"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium text-foreground">{def.name}</span>
+                  <span className="block truncate text-[11px] text-muted-foreground">{groups.join(" · ")}</span>
+                </span>
+                {already ? (
+                  <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
+                    ajouté
+                  </span>
+                ) : (
+                  <Plus className="h-4 w-4 shrink-0 text-primary" />
+                )}
+              </button>
+            );
+          })}
+
+          {results.length === 0 && (
+            <p className="px-3 py-8 text-center text-sm text-muted-foreground">
+              Aucun exercice trouvé pour cette recherche.
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SessionBlock({
   dayLabel,
   session,
@@ -491,15 +659,20 @@ function SessionBlock({
   onChange: (s: ProgramSession) => void;
 }) {
   const [open, setOpen] = useState(defaultOpen);
+  const [picking, setPicking] = useState(false);
   const dayShort = dayLabel.slice(0, 3); // Lun, Mar…
   const isRest = isRestDay(session);
   const namedExercises = session.exercises.filter((e) => e.name.trim());
 
-  function addExercise() {
+  /** Ajoute un exo choisi dans la banque (cibles par défaut 3×10). */
+  function addFromBank(def: ExerciseDef) {
     onChange({
       ...session,
       rest: false,
-      exercises: [...session.exercises, { name: "", targetSets: 3, targetReps: 8 }],
+      exercises: [
+        ...session.exercises.filter((e) => e.name.trim()), // purge les lignes vides
+        { name: def.name, exerciseId: def.id, targetSets: 3, targetReps: 10 },
+      ],
     });
     setOpen(true);
   }
@@ -524,17 +697,10 @@ function SessionBlock({
 
   /**
    * Bascule repos ⇄ séance via le seul flag `rest` — on ne touche jamais aux
-   * exercices, pour qu'un aller-retour Repos → Séance les conserve. En passant
-   * en séance sur un jour vide, on pré-ajoute une ligne pour démarrer la saisie.
+   * exercices, pour qu'un aller-retour Repos → Séance les conserve.
    */
   function setRest(rest: boolean) {
-    onChange({
-      ...session,
-      rest,
-      exercises: !rest && session.exercises.length === 0
-        ? [{ name: "", targetSets: 3, targetReps: 8 }]
-        : session.exercises,
-    });
+    onChange({ ...session, rest });
     setOpen(true);
   }
 
@@ -624,7 +790,7 @@ function SessionBlock({
                 />
               ))}
               <button
-                onClick={addExercise}
+                onClick={() => setPicking(true)}
                 className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-muted py-2.5 text-xs font-medium text-primary transition hover:border-primary hover:bg-primary/5"
               >
                 <Plus className="h-3.5 w-3.5" /> Ajouter un exercice
@@ -638,6 +804,71 @@ function SessionBlock({
               Aucune séance ce jour — récupération.
             </p>
           )}
+        </div>
+      )}
+
+      {picking && (
+        <ExerciseBankPicker
+          existingIds={session.exercises.map((e) => e.exerciseId).filter(Boolean) as string[]}
+          onPick={(def) => {
+            addFromBank(def);
+            setPicking(false);
+          }}
+          onClose={() => setPicking(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Récap du volume hebdo par groupe musculaire (jours sollicités + séries). */
+function WeeklyMuscleSummary({ sessions }: { sessions: ProgramSession[] }) {
+  const volume = useMemo(() => weeklyMuscleVolume(sessions), [sessions]);
+  const maxSets = Math.max(1, ...volume.map((v) => v.sets));
+  const worked = volume.filter((v) => v.sets > 0);
+
+  return (
+    <div className="rounded-2xl neu-surface p-4">
+      <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        Équilibre de la semaine
+      </p>
+
+      {worked.length === 0 ? (
+        <p className="py-2 text-sm text-muted-foreground">
+          Ajoute des exercices pour voir combien de fois chaque muscle est travaillé.
+        </p>
+      ) : (
+        <div className="space-y-2.5">
+          {volume.map((v) => {
+            const pct = Math.round((v.sets / maxSets) * 100);
+            const untrained = v.sets === 0;
+            return (
+              <div key={v.group} className="flex items-center gap-3">
+                <span
+                  className={`w-24 shrink-0 text-xs font-medium ${
+                    untrained ? "text-muted-foreground/50" : "text-foreground"
+                  }`}
+                >
+                  {MUSCLE_GROUP_LABELS[v.group]}
+                </span>
+                <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
+                  {!untrained && (
+                    <div
+                      className="h-full rounded-full bg-accent-gradient transition-all"
+                      style={{ width: `${Math.max(8, pct)}%` }}
+                    />
+                  )}
+                </div>
+                <span
+                  className={`w-20 shrink-0 text-right text-[11px] tabular-nums ${
+                    untrained ? "text-muted-foreground/50" : "text-muted-foreground"
+                  }`}
+                >
+                  {untrained ? "—" : `${v.days}j · ${v.sets} séries`}
+                </span>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -730,6 +961,9 @@ function ProgramEditor({
             </span>
           </p>
         </div>
+
+        {/* Récap volume hebdo par muscle */}
+        <WeeklyMuscleSummary sessions={draft.sessions} />
 
         {/* Les 7 jours de la semaine */}
         <div className="space-y-1.5">
@@ -874,6 +1108,7 @@ interface LiveSet {
 
 interface LiveExercise {
   name: string;
+  exerciseId?: string;
   sets: LiveSet[];
 }
 
@@ -1012,6 +1247,7 @@ function LogView({
       programSessionId: session.id,
       exercises: exercises.map((ex) => ({
         name: ex.name,
+        ...(ex.exerciseId ? { exerciseId: ex.exerciseId } : {}),
         sets: ex.sets.filter((s) => s.done).map((s) => ({ reps: s.reps, weight: s.weight, rpe: s.rpe })),
       })),
     });
@@ -1272,13 +1508,18 @@ function buildInitial(
   lastByExercise: LastByExercise
 ): LiveExercise[] {
   if (draft && draft.programSessionId === session.id) {
-    return draft.exercises.map((ex) => ({ name: ex.name, sets: ex.sets.map((s) => ({ ...s })) }));
+    return draft.exercises.map((ex) => ({
+      name: ex.name,
+      exerciseId: ex.exerciseId,
+      sets: ex.sets.map((s) => ({ ...s })),
+    }));
   }
   return session.exercises.map((ex) => {
     const last = lastByExercise.get(ex.name);
     const hasHistory = !!last && last.length > 0;
     return {
       name: ex.name,
+      exerciseId: ex.exerciseId,
       sets: Array.from({ length: ex.targetSets }, (_, i) => ({
         reps: last?.[i]?.reps ?? ex.targetReps,
         weight: last?.[i]?.weight ?? ex.targetWeight ?? 0,
@@ -1300,6 +1541,7 @@ function redoSessionFromEntry(entry: SessionEntry): ProgramSession {
     title: entry.title,
     exercises: entry.exercises.map((ex) => ({
       name: ex.name,
+      exerciseId: ex.exerciseId,
       targetSets: ex.sets.length || 1,
       targetReps: ex.sets[0]?.reps ?? 8,
       targetWeight: ex.sets[0]?.weight,

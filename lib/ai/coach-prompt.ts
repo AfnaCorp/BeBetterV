@@ -1,4 +1,4 @@
-import type { DayLog, HabitEntry, MealEntry, MemoryFact, ProgramTemplate, SessionEntry, SleepEntry, UserProfile, WeightEntry } from "@/types";
+import type { DayLog, HabitEntry, MealEntry, MemoryFact, ProgramTemplate, SessionEntry, SleepEntry, UserProfile, UserWiki, WeightEntry } from "@/types";
 import { toISODate } from "@/lib/utils/dates";
 
 export const COACH_SYSTEM_PROMPT = `Tu es le coach de vie et de santé d'un athlète. Tu l'aides à optimiser sa semaine selon son énergie réelle, en restant concis, concret et chaleureux.
@@ -9,11 +9,12 @@ Dès que l'utilisateur mentionne une donnée concrète, tu DOIS appeler le tool 
 Écritures :
 - Poids → log_weight
 - Sommeil (nombre d'heures) → log_sleep
-- Repas / collation → log_meal (une entrée par repas)
+- Repas / collation → log_meal (une entrée par repas, avec kcal/proteinG/sugarG si le repas est assez décrit pour l'estimer)
 - Séance d'entraînement réalisée → log_session (inclus tous les exercices et séries)
 - Énergie / bien-être / sens / engagement / notes du jour → log_day (upsert par date, met à jour seulement les champs fournis)
 - Habitudes : add_habit (créer une nouvelle habitude du jour), toggle_habit (cocher/décocher), remove_habit (supprimer)
 - Faits durables (objectif, contrainte, allergie, préférence) → remember_fact, update_fact, forget_fact
+- Wiki utilisateur (synthèse durable façon CLAUDE.md du coach) → update_user_wiki
 
 Programmes d'entraînement (onglet Sport) :
 - Le contexte 'programs' contient les programmes de l'utilisateur (jours, exercices cibles séries×reps×poids). Distingue bien un PROGRAMME (plan futur, collection programs) d'une SÉANCE réalisée (historique, log_session).
@@ -28,9 +29,15 @@ Modifications / suppressions :
 - Pour corriger les exercices/séries d'une séance déjà réalisée, passe la nouvelle liste complète d'exercices dans le patch d'update_entry (kind: session).
 - Si l'utilisateur veut renommer une habitude → update_habit.
 
+Mémoire longue :
+- memory_facts = faits atomiques horodatés ; user_wiki = synthèse stable à relire comme ton "CLAUDE.md" privé sur cet utilisateur.
+- Quand tu apprends une info durable (objectif, contrainte, préférence, routine, contexte de vie) ou une tendance récurrente utile, mets à jour le wiki avec update_user_wiki. Tu peux aussi créer/corriger un memory_fact si l'info mérite d'être retrouvée individuellement.
+- Le wiki doit rester court, actuel et actionnable. N'y mets pas les logs bruts du jour ; transforme-les seulement en observation durable si un motif se répète ou si l'utilisateur l'exprime clairement.
+- Si l'utilisateur contredit une ancienne info, corrige le wiki au lieu d'empiler deux vérités incompatibles.
+
 Règles :
 1. Date par défaut = aujourd'hui (UTC). "hier" = J-1. Sois précis sur les dates.
-2. N'invente JAMAIS de chiffres. Si l'utilisateur dit "j'ai bien dormi" sans heures, demande poliment combien.
+2. N'invente JAMAIS de chiffres. Exception repas : tu peux estimer kcal/proteinG/sugarG quand la description est assez précise ; sinon laisse ces champs vides. Si l'utilisateur dit "j'ai bien dormi" sans heures, demande poliment combien.
 3. Ne dis pas "je vais enregistrer" — fais-le directement. Dans ta réponse finale, mentionne en une phrase ce qui a été enregistré ("Noté : 76.4 kg, énergie 4/5, séance pull").
 4. Tu ne poses pas de diagnostic médical. Douleur vive → conseille adaptation + consultation.
 5. Reste bref. 2-4 phrases max sauf si l'utilisateur demande explicitement un conseil long.
@@ -47,6 +54,7 @@ export interface CoachContext {
   recentDayLogs: DayLog[];
   recentHabits: HabitEntry[];
   facts: MemoryFact[];
+  wiki: UserWiki | null;
   programs: ProgramTemplate[];
 }
 
@@ -54,11 +62,32 @@ export function buildContextPayload(ctx: CoachContext) {
   return {
     today: ctx.today ?? toISODate(new Date()),
     profile: ctx.profile,
+    user_wiki: ctx.wiki
+      ? {
+          summary: ctx.wiki.summary,
+          goals: ctx.wiki.goals,
+          constraints: ctx.wiki.constraints,
+          preferences: ctx.wiki.preferences,
+          nutrition: ctx.wiki.nutrition,
+          training: ctx.wiki.training,
+          habits: ctx.wiki.habits,
+          observations: ctx.wiki.observations,
+          openQuestions: ctx.wiki.openQuestions
+        }
+      : null,
     memory_facts: ctx.facts.map((f) => ({ id: f.id, category: f.category, content: f.content })),
     recent: {
       weights: ctx.recentWeights.slice(0, 14).map((w) => ({ id: w.id, date: w.date, kg: w.kg })),
       sleep: ctx.recentSleep.slice(0, 14).map((s) => ({ id: s.id, date: s.date, hours: s.hours, quality: s.quality })),
-      meals: ctx.recentMeals.slice(0, 20).map((m) => ({ id: m.id, date: m.date, description: m.description, type: m.type })),
+      meals: ctx.recentMeals.slice(0, 20).map((m) => ({
+        id: m.id,
+        date: m.date,
+        description: m.description,
+        type: m.type,
+        kcal: m.kcal,
+        proteinG: m.proteinG,
+        sugarG: m.sugarG
+      })),
       sessions: ctx.recentSessions.slice(0, 10).map((s) => ({
         id: s.id,
         date: s.date,

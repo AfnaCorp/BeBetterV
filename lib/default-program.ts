@@ -1,63 +1,67 @@
 import type { ProgramTemplate } from "@/types";
+import { EXERCISE_BY_ID } from "@/lib/exercise-bank";
 
-function s(
-  id: string,
-  title: string,
-  exercises: { name: string; targetSets: number; targetReps: number }[]
-) {
-  return { id, title, rest: exercises.length === 0, exercises: exercises.map((e) => ({ ...e })) };
+/** Construit un exo de programme depuis un id de banque (le nom suit la banque). */
+function ex(exerciseId: string, targetSets: number, targetReps: number) {
+  const def = EXERCISE_BY_ID[exerciseId];
+  if (!def) throw new Error(`default-program: exercice inconnu "${exerciseId}"`);
+  return { name: def.name, exerciseId, targetSets, targetReps };
+}
+
+function s(id: string, title: string, exercises: ReturnType<typeof ex>[]) {
+  return { id, title, rest: exercises.length === 0, exercises };
 }
 
 // Semaine fixe : index 0 = Lundi … index 6 = Dimanche.
 export const DEFAULT_PROGRAM: Omit<ProgramTemplate, "id" | "createdAt"> = {
   name: "Training Wassim",
   sessions: [
-    // Lundi
+    // Lundi — Pectoraux / Épaules
     s("j1", "Pectoraux / Épaules", [
-      { name: "Développé incliné barre guidée", targetSets: 3, targetReps: 8 },
-      { name: "Développé semi-incliné haltères", targetSets: 2, targetReps: 15 },
-      { name: "Wide Chest Press superset Dips en avant", targetSets: 3, targetReps: 12 },
-      { name: "Poulis vis-à-vis haut", targetSets: 4, targetReps: 15 },
-      { name: "Développé militaire Shoulder Press à l'envers", targetSets: 2, targetReps: 20 },
-      { name: "Élévation latérale haltère", targetSets: 4, targetReps: 15 },
+      ex("developpe-incline-smith", 3, 8),
+      ex("developpe-incline-halteres", 2, 15),
+      ex("chest-press-machine", 3, 12),
+      ex("ecarte-poulie-haute", 4, 15),
+      ex("shoulder-press-machine", 2, 20),
+      ex("elevation-laterale", 4, 15),
     ]),
-    // Mardi
+    // Mardi — Dos
     s("j2", "Dos", [
-      { name: "Rowing barre", targetSets: 4, targetReps: 8 },
-      { name: "Tirage horizontal haut superset Rowing T-bar", targetSets: 4, targetReps: 12 },
-      { name: "Bûcheron", targetSets: 3, targetReps: 15 },
-      { name: "Tirage vertical prise large", targetSets: 3, targetReps: 10 },
-      { name: "Pec-deck inversé (arrière épaules)", targetSets: 3, targetReps: 15 },
+      ex("rowing-barre", 4, 8),
+      ex("rowing-t-bar", 4, 12),
+      ex("bucheron-poulie", 3, 15),
+      ex("tirage-vertical-prise-large", 3, 10),
+      ex("pec-deck-inverse", 3, 15),
     ]),
-    // Mercredi
+    // Mercredi — Repos
     s("j3", "", []),
-    // Jeudi
+    // Jeudi — Épaules
     s("j4", "Épaules", [
-      { name: "Développé militaire haltère", targetSets: 3, targetReps: 10 },
-      { name: "Développé militaire Shoulder Press pure à l'envers", targetSets: 4, targetReps: 15 },
-      { name: "Élévation latérale haltère sur banc incliné superset Poulie basse", targetSets: 3, targetReps: 15 },
-      { name: "Élévation rond assis superset Tirage menton barre Z", targetSets: 3, targetReps: 15 },
+      ex("developpe-militaire-halteres", 3, 10),
+      ex("shoulder-press-machine", 4, 15),
+      ex("elevation-laterale-poulie", 3, 15),
+      ex("tirage-menton", 3, 15),
     ]),
-    // Vendredi
+    // Vendredi — Jambes / Mollets
     s("j5", "Jambes / Mollets", [
-      { name: "Leg extension", targetSets: 4, targetReps: 10 },
-      { name: "Belt squat / Hack squat", targetSets: 4, targetReps: 12 },
-      { name: "Ischio haltère", targetSets: 4, targetReps: 10 },
-      { name: "Leg presse", targetSets: 4, targetReps: 17 },
-      { name: "Leg curl ischio", targetSets: 4, targetReps: 15 },
-      { name: "Leg presse mollets (prise orteils)", targetSets: 3, targetReps: 20 },
-      { name: "Barre guidée step mollets", targetSets: 3, targetReps: 20 },
+      ex("leg-extension", 4, 10),
+      ex("hack-squat", 4, 12),
+      ex("leg-curl-assis", 4, 10),
+      ex("presse-cuisses", 4, 17),
+      ex("leg-curl-allonge", 4, 15),
+      ex("mollets-presse", 3, 20),
+      ex("mollets-debout", 3, 20),
     ]),
-    // Samedi
+    // Samedi — Biceps / Triceps
     s("j6", "Biceps / Triceps", [
-      { name: "Barre Z debout coude serré (21s)", targetSets: 4, targetReps: 21 },
-      { name: "Dips ou machine dips", targetSets: 4, targetReps: 12 },
-      { name: "Poulie basse corde (biceps)", targetSets: 4, targetReps: 15 },
-      { name: "Barre au front barre Z (skullcrusher)", targetSets: 4, targetReps: 12 },
-      { name: "Curl marteau haltère devant pec", targetSets: 4, targetReps: 20 },
-      { name: "Tirage corde (triceps)", targetSets: 4, targetReps: 15 },
+      ex("curl-ez", 4, 21),
+      ex("dips-triceps", 4, 12),
+      ex("curl-poulie", 4, 15),
+      ex("barre-au-front", 4, 12),
+      ex("curl-marteau", 4, 20),
+      ex("extension-poulie-corde", 4, 15),
     ]),
-    // Dimanche
+    // Dimanche — Repos
     s("j7", "", []),
   ],
 };

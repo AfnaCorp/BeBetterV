@@ -6,6 +6,7 @@ export const COLLECTIONS = {
   dayLogs: "dayLogs",
   habits: "habits",
   facts: "facts",
+  wiki: "wiki",
   messages: "messages",
   programs: "programs"
 } as const;

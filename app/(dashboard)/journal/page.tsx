@@ -3,32 +3,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bot,
-  Check,
   Heart,
-  ListChecks,
   Moon,
-  Plus,
   Scale,
   Sparkles,
   Sun,
-  Trash2,
   UtensilsCrossed,
-  X
 } from "lucide-react";
 import { useAppData } from "@/components/app-data-provider";
 import { CoachWriteBanner } from "@/components/coach/coach-write-banner";
 import { toISODate, todayISODate } from "@/lib/utils/dates";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import type { DayLog, MealEntry, SleepEntry, WeightEntry } from "@/types";
-
-type TabId = "suivi" | "bien-etre" | "habitudes";
-
-const TABS: { id: TabId; label: string; icon: typeof Scale }[] = [
-  { id: "suivi", label: "Suivi", icon: Scale },
-  { id: "bien-etre", label: "Bien-être", icon: Heart },
-  { id: "habitudes", label: "Habitudes", icon: ListChecks }
-];
 
 function dayKey(iso: string) {
   return iso.slice(0, 10);
@@ -356,145 +341,28 @@ function BienEtreTab() {
   );
 }
 
-function HabitudesTab() {
-  const { habits, addHabit, updateHabit, removeHabit } = useAppData();
-  const [name, setName] = useState("");
-  const today = todayISODate();
-
-  const todayHabits = useMemo(
-    () => habits.filter((h) => dayKey(h.date) === today),
-    [habits, today]
-  );
-  const history = useMemo(
-    () => habits.filter((h) => dayKey(h.date) !== today).slice(0, 30),
-    [habits, today]
-  );
-
-  async function create(e: React.FormEvent) {
-    e.preventDefault();
-    const trimmed = name.trim();
-    if (!trimmed) return;
-    await addHabit({ date: todayISODate(), name: trimmed, done: false, source: "manual" });
-    setName("");
-  }
-
-  return (
-    <div className="space-y-6">
-      <form onSubmit={create} className="flex gap-2">
-        <Input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Méditation, 2L d'eau, marche…"
-        />
-        <Button type="submit" disabled={!name.trim()}>
-          <Plus className="h-4 w-4" />
-        </Button>
-      </form>
-
-      <div>
-        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Aujourd'hui
-        </p>
-        {todayHabits.length === 0 ? (
-          <EmptyState label="Aucune habitude pour aujourd'hui." />
-        ) : (
-          <div className="space-y-1">
-            {todayHabits.map((h) => (
-              <div
-                key={h.id}
-                className="flex items-center gap-3 py-2.5 border-b border-border/50 last:border-0"
-              >
-                <button
-                  type="button"
-                  onClick={() => updateHabit(h.id, { done: !h.done })}
-                  className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition ${
-                    h.done ? "gradient-accent border-transparent text-white" : "border-border"
-                  }`}
-                  aria-label={h.done ? "Marquer non fait" : "Marquer fait"}
-                >
-                  {h.done && <Check className="h-3 w-3" />}
-                </button>
-                <span
-                  className={`flex-1 text-sm ${
-                    h.done ? "text-muted-foreground line-through" : "text-foreground"
-                  }`}
-                >
-                  {h.name}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => removeHabit(h.id)}
-                  className="text-muted-foreground hover:text-foreground"
-                  aria-label="Supprimer"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {history.length > 0 && (
-        <div>
-          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Historique
-          </p>
-          <div className="space-y-1">
-            {history.map((h) => (
-              <div
-                key={h.id}
-                className="flex items-center gap-3 py-2.5 border-b border-border/50 last:border-0"
-              >
-                {h.done ? (
-                  <Check className="h-3.5 w-3.5 shrink-0 text-primary" />
-                ) : (
-                  <X className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                )}
-                <span className="flex-1 text-sm text-foreground">{h.name}</span>
-                <span className="text-xs capitalize text-muted-foreground">{formatDayLabel(dayKey(h.date))}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function JournalPage() {
-  const [tab, setTab] = useState<TabId>("suivi");
-
   return (
     <div className="space-y-4">
       <CoachWriteBanner route="/journal" />
       <h1 className="text-2xl font-semibold text-foreground">Journal</h1>
 
-      <div role="tablist" className="neu-inset grid grid-cols-3 gap-1 rounded-full p-1">
-        {TABS.map((t) => {
-          const Icon = t.icon;
-          const active = tab === t.id;
-          return (
-            <button
-              key={t.id}
-              role="tab"
-              aria-selected={active}
-              onClick={() => setTab(t.id)}
-              className={`flex h-10 items-center justify-center gap-2 rounded-full text-sm font-medium transition ${
-                active ? "gradient-accent text-white shadow-md" : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Icon className="h-4 w-4" />
-              <span>{t.label}</span>
-            </button>
-          );
-        })}
-      </div>
+      <div className="neu-surface space-y-7 rounded-2xl px-4 py-4 sm:px-5 sm:py-5">
+        <section className="space-y-4">
+          <div className="flex items-center gap-2">
+            <Scale className="h-4 w-4 text-primary" />
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Suivi</h2>
+          </div>
+          <SuiviTab />
+        </section>
 
-      <div className="neu-surface rounded-2xl px-4 py-4 sm:px-5 sm:py-5">
-        {tab === "suivi" && <SuiviTab />}
-        {tab === "bien-etre" && <BienEtreTab />}
-        {tab === "habitudes" && <HabitudesTab />}
+        <section className="space-y-4 border-t border-border/50 pt-6">
+          <div className="flex items-center gap-2">
+            <Heart className="h-4 w-4 text-primary" />
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Bien-être</h2>
+          </div>
+          <BienEtreTab />
+        </section>
       </div>
     </div>
   );

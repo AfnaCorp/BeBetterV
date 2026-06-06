@@ -15,7 +15,9 @@ service cloud.firestore {
       match /sessions/{id}  { allow read, write: if isOwner(userId); }
       match /dayLogs/{id}   { allow read, write: if isOwner(userId); }
       match /facts/{id}     { allow read, write: if isOwner(userId); }
+      match /wiki/{id}      { allow read, write: if isOwner(userId); }
       match /messages/{id}  { allow read, write: if isOwner(userId); }
+      match /programs/{id}  { allow read, write: if isOwner(userId); }
     }
   }
 }

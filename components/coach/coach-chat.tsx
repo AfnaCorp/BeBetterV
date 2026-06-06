@@ -40,7 +40,7 @@ function dayKeyOf(createdAt: unknown): string {
 }
 
 export function CoachChat({ variant = "page" }: { variant?: "page" | "floating" } = {}) {
-  const { messages, profile, weights, sleep, meals, sessions, dayLogs, habits, facts, programs } = useAppData();
+  const { messages, profile, weights, sleep, meals, sessions, dayLogs, habits, facts, wiki, programs } = useAppData();
   const { user } = useAuth();
   const router = useRouter();
   const [input, setInput] = useState("");
@@ -153,6 +153,7 @@ export function CoachChat({ variant = "page" }: { variant?: "page" | "floating" 
             recentDayLogs: dayLogs,
             recentHabits: habits,
             facts,
+            wiki,
             programs
           }
         })

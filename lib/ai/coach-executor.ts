@@ -82,11 +82,16 @@ async function logMeal(ctx: ExecCtx, args: ToolArgs): Promise<WriteRecord> {
   const date = normalizeDate(ctx, args.date);
   const description = String(args.description ?? "").trim();
   if (!description) throw new Error("description vide");
+  const kcal = args.kcal != null ? Number(args.kcal) : undefined;
+  const proteinG = args.proteinG != null ? Number(args.proteinG) : undefined;
+  const sugarG = args.sugarG != null ? Number(args.sugarG) : undefined;
   const ref = await userCol(ctx.uid, "meals").add({
     date,
     description,
     ...(args.type ? { type: args.type } : {}),
-    ...(args.kcal != null ? { kcal: Number(args.kcal) } : {}),
+    ...(kcal != null && Number.isFinite(kcal) ? { kcal } : {}),
+    ...(proteinG != null && Number.isFinite(proteinG) ? { proteinG } : {}),
+    ...(sugarG != null && Number.isFinite(sugarG) ? { sugarG } : {}),
     source: "coach",
     createdAt: FieldValue.serverTimestamp()
   });
@@ -244,7 +249,7 @@ async function updateEntryTool(ctx: ExecCtx, args: ToolArgs): Promise<WriteRecor
   const cleaned: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(patch)) {
     if (v === undefined || v === null) continue;
-    if (["kg", "hours", "quality", "kcal", "durationMin", "energy", "engagement", "wellbeing", "meaning"].includes(k)) {
+    if (["kg", "hours", "quality", "kcal", "proteinG", "sugarG", "durationMin", "energy", "engagement", "wellbeing", "meaning"].includes(k)) {
       const n = Number(v);
       if (Number.isFinite(n)) cleaned[k] = n;
     } else {
@@ -389,6 +394,60 @@ async function forgetFact(ctx: ExecCtx, args: ToolArgs): Promise<WriteRecord> {
   return { kind: "fact_removed", summary: "Fait oublié.", ref: id };
 }
 
+const WIKI_ARRAY_FIELDS = [
+  "goals",
+  "constraints",
+  "preferences",
+  "nutrition",
+  "training",
+  "habits",
+  "observations",
+  "openQuestions"
+] as const;
+
+function cleanText(value: unknown, maxLength: number): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim().replace(/\s+/g, " ");
+  if (!trimmed) return undefined;
+  return trimmed.length > maxLength ? `${trimmed.slice(0, maxLength - 1).trim()}…` : trimmed;
+}
+
+function cleanStringArray(value: unknown): string[] | undefined {
+  const raw = Array.isArray(value) ? value : typeof value === "string" ? [value] : undefined;
+  if (!raw) return undefined;
+  const seen = new Set<string>();
+  return raw
+    .map((item) => cleanText(item, 180))
+    .filter((item): item is string => Boolean(item))
+    .filter((item) => {
+      const key = item.toLocaleLowerCase("fr-FR");
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 12);
+}
+
+async function updateUserWiki(ctx: ExecCtx, args: ToolArgs): Promise<WriteRecord> {
+  const payload: Record<string, unknown> = {};
+  const summary = cleanText(args.summary, 600);
+  if (summary) payload.summary = summary;
+
+  for (const field of WIKI_ARRAY_FIELDS) {
+    const cleaned = cleanStringArray(args[field]);
+    if (cleaned) payload[field] = cleaned;
+  }
+
+  if (Object.keys(payload).length === 0) throw new Error("wiki vide");
+
+  payload.updatedAt = FieldValue.serverTimestamp();
+  const id = "coach";
+  const before = await snapshotBefore(ctx.uid, "wiki", id);
+  await userCol(ctx.uid, "wiki").doc(id).set(payload, { merge: true });
+  ctx.undo = { type: "restore", collection: "wiki", id, before, label: "wiki coach" };
+  return { kind: "wiki_updated", summary: "Wiki coach mis à jour", ref: id };
+}
+
 // ─── Annulation (undo) ──────────────────────────────────────────────────────
 
 function lastActionRef(uid: string) {
@@ -443,6 +502,7 @@ export const coachExecutors: Record<CoachToolName, (ctx: ExecCtx, args: ToolArgs
   remember_fact: rememberFact,
   update_fact: updateFact,
   forget_fact: forgetFact,
+  update_user_wiki: updateUserWiki,
   undo_last: undoLast
 };
 

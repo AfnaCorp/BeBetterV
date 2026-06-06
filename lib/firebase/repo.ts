@@ -67,6 +67,20 @@ export function subscribe<T extends DocumentData>(
   );
 }
 
+export function subscribeDoc<T extends DocumentData>(
+  uid: string,
+  name: string,
+  id: string,
+  onData: (item: WithId<T> | null) => void,
+  onError?: (err: FirestoreError) => void
+): Unsubscribe {
+  return onSnapshot(
+    userDoc(uid, name, id),
+    (snap) => onData(snap.exists() ? { id: snap.id, ...(snap.data() as T) } : null),
+    onError
+  );
+}
+
 export async function createEntry<T extends DocumentData>(
   uid: string,
   name: string,

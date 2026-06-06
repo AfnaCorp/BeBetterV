@@ -15,6 +15,7 @@ Coach de vie / santé agentic. L'utilisateur écrit en langage naturel ("hier 7h
 Le coach a accès à :
 1. L'historique brut (toutes les entrées Firestore).
 2. Une "memory bank" — collection `facts` — où il enregistre des faits indépendants horodatés (objectifs, contraintes, préférences, observations).
+3. Un wiki durable — `users/{uid}/wiki/coach` — qui synthétise ce qu'il sait de l'utilisateur comme un `CLAUDE.md` privé : objectifs, contraintes, préférences, nutrition, entraînement, habitudes, observations et questions ouvertes.
 
 ## Stack
 
@@ -44,10 +45,11 @@ Pas de Prisma, pas de next-auth, pas de Recharts, pas de firebase-admin — tout
 users/{uid}                          → UserProfile { name, email, goal?, weightTarget?, heightCm?, createdAt }
 users/{uid}/weights/{id}             → WeightEntry { date, kg, source: "coach"|"manual", createdAt }
 users/{uid}/sleep/{id}               → SleepEntry { date, hours, quality?, source }
-users/{uid}/meals/{id}               → MealEntry { date, description, kcal?, type?, source }
+users/{uid}/meals/{id}               → MealEntry { date, description, kcal?, proteinG?, sugarG?, type?, source }
 users/{uid}/sessions/{id}            → SessionEntry { date, title, durationMin?, exercises: [{name, sets:[{reps, weight, rpe?}]}], source }
 users/{uid}/dayLogs/{id}             → DayLog { date, energy 1-5, engagement 1-5, notes?, source }
 users/{uid}/facts/{id}               → MemoryFact { content, category, confidence, createdAt, lastSeenAt }
+users/{uid}/wiki/coach               → UserWiki { summary?, goals?, constraints?, preferences?, nutrition?, training?, habits?, observations?, openQuestions? }
 users/{uid}/messages/{id}            → ChatMessage { role, content, writes?, createdAt }
 ```
 
@@ -63,11 +65,11 @@ Types sources : [types/log.ts](types/log.ts) · [types/memory.ts](types/memory.t
 ### Couche IA
 
 - [lib/ai/gemini.ts](lib/ai/gemini.ts) — wrapper SDK Gemini, `generateText({systemPrompt, history, message})`. Model = `process.env.GEMINI_TEXT_MODEL` (défaut `gemini-2.5-pro`).
-- [lib/ai/coach-prompt.ts](lib/ai/coach-prompt.ts) — `COACH_SYSTEM_PROMPT` + `buildContextPayload(ctx)` qui sérialise profile + memory_facts + 14 dernières entrées pour injecter dans le system prompt.
+- [lib/ai/coach-prompt.ts](lib/ai/coach-prompt.ts) — `COACH_SYSTEM_PROMPT` + `buildContextPayload(ctx)` qui sérialise profile + user_wiki + memory_facts + 14 dernières entrées pour injecter dans le system prompt.
 - [lib/ai/ai-client.ts](lib/ai/ai-client.ts) — `askCoach({message, history, context})`, server-only.
 - [app/api/coach/route.ts](app/api/coach/route.ts) — endpoint POST. Reçoit `{message, history, context}`, renvoie `{answer}`.
 
-**État actuel : le coach répond en texte simple.** L'étape suivante (étape 2 du pivot) ajoutera le function-calling Gemini avec des tools (`log_weight`, `log_sleep`, `log_meal`, `log_session`, `log_day`, `remember_fact`, `update_fact`, `forget_fact`) pour qu'il écrive lui-même dans Firestore.
+Le coach utilise le function-calling Gemini avec des tools (`log_weight`, `log_sleep`, `log_meal`, `log_session`, `log_day`, `remember_fact`, `update_fact`, `forget_fact`, `update_user_wiki`, etc.) pour écrire lui-même dans Firestore.
 
 ### Design system
 

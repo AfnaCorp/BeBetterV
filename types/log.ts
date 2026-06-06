@@ -19,6 +19,8 @@ export interface SleepEntry extends BaseEntry {
 export interface MealEntry extends BaseEntry {
   description: string;
   kcal?: number;
+  proteinG?: number;
+  sugarG?: number;
   type?: "petit_dej" | "dej" | "diner" | "snack";
 }
 
@@ -32,6 +34,8 @@ export interface DayLog extends BaseEntry {
 
 export interface SessionExercise {
   name: string;
+  /** Référence banque d'exercices (lib/exercise-bank), pour le suivi par muscle. */
+  exerciseId?: string;
   sets: { reps: number; weight: number; rpe?: number }[];
 }
 

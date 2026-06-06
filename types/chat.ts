@@ -16,6 +16,7 @@ export type WriteKind =
   | "fact_added"
   | "fact_updated"
   | "fact_removed"
+  | "wiki_updated"
   | "undo";
 
 export interface WriteRecord {

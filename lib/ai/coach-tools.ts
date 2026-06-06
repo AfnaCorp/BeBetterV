@@ -43,7 +43,9 @@ export const coachToolDeclarations: FunctionDeclaration[] = [
           format: "enum",
           enum: ["petit_dej", "dej", "diner", "snack"]
         },
-        kcal: { type: SchemaType.NUMBER, description: "Estimation kcal, optionnel." }
+        kcal: { type: SchemaType.NUMBER, description: "Estimation kcal, optionnel." },
+        proteinG: { type: SchemaType.NUMBER, description: "Estimation protéines en grammes, optionnel." },
+        sugarG: { type: SchemaType.NUMBER, description: "Estimation sucre en grammes, optionnel." }
       },
       required: ["date", "description"]
     }
@@ -165,6 +167,8 @@ export const coachToolDeclarations: FunctionDeclaration[] = [
             quality: { type: SchemaType.NUMBER },
             description: { type: SchemaType.STRING },
             kcal: { type: SchemaType.NUMBER },
+            proteinG: { type: SchemaType.NUMBER },
+            sugarG: { type: SchemaType.NUMBER },
             type: { type: SchemaType.STRING },
             title: { type: SchemaType.STRING },
             durationMin: { type: SchemaType.NUMBER },
@@ -316,6 +320,57 @@ export const coachToolDeclarations: FunctionDeclaration[] = [
       properties: { id: { type: SchemaType.STRING } },
       required: ["id"]
     }
+  },
+  {
+    name: "update_user_wiki",
+    description:
+      "Met à jour le wiki durable du coach sur l'utilisateur, comme une fiche CLAUDE.md privée. Utilise uniquement pour des infos durables, préférences, contraintes, objectifs, routines ou tendances récurrentes. Fournis seulement les sections à remplacer ; les sections omises restent intactes.",
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        summary: { type: SchemaType.STRING, description: "Résumé synthétique de l'utilisateur en 1-3 phrases." },
+        goals: {
+          type: SchemaType.ARRAY,
+          description: "Objectifs durables actuels.",
+          items: { type: SchemaType.STRING }
+        },
+        constraints: {
+          type: SchemaType.ARRAY,
+          description: "Contraintes, blessures, allergies, limites, contexte non négociable.",
+          items: { type: SchemaType.STRING }
+        },
+        preferences: {
+          type: SchemaType.ARRAY,
+          description: "Préférences de coaching, d'alimentation, d'entraînement ou de communication.",
+          items: { type: SchemaType.STRING }
+        },
+        nutrition: {
+          type: SchemaType.ARRAY,
+          description: "Tendances nutritionnelles durables ou cibles utiles.",
+          items: { type: SchemaType.STRING }
+        },
+        training: {
+          type: SchemaType.ARRAY,
+          description: "Profil d'entraînement, exercices, programmes, réactions aux charges.",
+          items: { type: SchemaType.STRING }
+        },
+        habits: {
+          type: SchemaType.ARRAY,
+          description: "Routines et habitudes répétées.",
+          items: { type: SchemaType.STRING }
+        },
+        observations: {
+          type: SchemaType.ARRAY,
+          description: "Patterns comportementaux ou signaux utiles observés dans la durée.",
+          items: { type: SchemaType.STRING }
+        },
+        openQuestions: {
+          type: SchemaType.ARRAY,
+          description: "Questions importantes à clarifier plus tard.",
+          items: { type: SchemaType.STRING }
+        }
+      }
+    }
   }
 ];
 
@@ -335,4 +390,5 @@ export type CoachToolName =
   | "remember_fact"
   | "update_fact"
   | "forget_fact"
+  | "update_user_wiki"
   | "undo_last";

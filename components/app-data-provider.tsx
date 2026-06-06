@@ -4,7 +4,7 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { limit, orderBy } from "firebase/firestore";
 import { useAuth } from "@/components/auth-provider";
 import { COLLECTIONS } from "@/lib/firebase/collections";
-import { clearField, createEntry, deleteEntry, subscribe, updateEntry, writeProfile } from "@/lib/firebase/repo";
+import { clearField, createEntry, deleteEntry, subscribe, subscribeDoc, updateEntry, writeProfile } from "@/lib/firebase/repo";
 import type {
   ChatMessage,
   DayLog,
@@ -14,6 +14,7 @@ import type {
   ProgramTemplate,
   SessionEntry,
   SleepEntry,
+  UserWiki,
   UserProfile,
   WeightEntry
 } from "@/types";
@@ -28,6 +29,7 @@ interface AppDataContextValue {
   dayLogs: DayLog[];
   habits: HabitEntry[];
   facts: MemoryFact[];
+  wiki: UserWiki | null;
   messages: ChatMessage[];
   programs: ProgramTemplate[];
 
@@ -64,6 +66,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
   const [dayLogs, setDayLogs] = useState<DayLog[]>([]);
   const [habits, setHabits] = useState<HabitEntry[]>([]);
   const [facts, setFacts] = useState<MemoryFact[]>([]);
+  const [wiki, setWiki] = useState<UserWiki | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [programs, setPrograms] = useState<ProgramTemplate[]>([]);
   const [ready, setReady] = useState(false);
@@ -78,6 +81,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       setDayLogs([]);
       setHabits([]);
       setFacts([]);
+      setWiki(null);
       setMessages([]);
       setPrograms([]);
       setReady(false);
@@ -92,6 +96,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       subscribe<DayLog>(uid, COLLECTIONS.dayLogs, setDayLogs, undefined, orderBy("date", "desc")),
       subscribe<HabitEntry>(uid, COLLECTIONS.habits, setHabits, undefined, orderBy("date", "desc")),
       subscribe<MemoryFact>(uid, COLLECTIONS.facts, setFacts, undefined, orderBy("createdAt", "desc")),
+      subscribeDoc<UserWiki>(uid, COLLECTIONS.wiki, "coach", setWiki),
       subscribe<ChatMessage>(
         uid,
         COLLECTIONS.messages,
@@ -123,6 +128,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       dayLogs,
       habits,
       facts,
+      wiki,
       messages,
       programs,
       saveProfile: async (patch) => {
@@ -157,7 +163,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       clearProgramDraft: (id) => clearField(requireUid(), COLLECTIONS.programs, id, "draft"),
       removeProgram: (id) => deleteEntry(requireUid(), COLLECTIONS.programs, id)
     };
-  }, [uid, ready, profile, weights, sleep, meals, sessions, dayLogs, habits, facts, messages, programs]);
+  }, [uid, ready, profile, weights, sleep, meals, sessions, dayLogs, habits, facts, wiki, messages, programs]);
 
   return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>;
 }

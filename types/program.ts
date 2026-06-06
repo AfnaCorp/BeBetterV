@@ -1,5 +1,7 @@
 export interface ProgramExercise {
   name: string;
+  /** Référence vers la banque d'exercices (lib/exercise-bank). Détermine les muscles travaillés. */
+  exerciseId?: string;
   targetSets: number;
   targetReps: number;
   targetWeight?: number;
@@ -41,6 +43,7 @@ export interface DraftSet {
 
 export interface DraftExercise {
   name: string;
+  exerciseId?: string;
   sets: DraftSet[];
 }
 

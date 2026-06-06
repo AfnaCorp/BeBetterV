@@ -24,6 +24,7 @@ export function routeForWrite(kind: WriteKind): string | null {
     case "fact_added":
     case "fact_updated":
     case "fact_removed":
+    case "wiki_updated":
     default:
       return null; // pas de page dédiée à la mémoire → aucune navigation
   }
