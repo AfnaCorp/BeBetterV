@@ -6,6 +6,10 @@ node_modules/
 out/
 *.tsbuildinfo
 
+# Firebase App Hosting adapter output
+.apphosting/
+next.config.original.mjs
+
 # Production
 dist/
 build/
