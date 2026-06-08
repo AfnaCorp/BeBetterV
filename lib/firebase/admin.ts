@@ -1,11 +1,17 @@
 import "server-only";
 import fs from "node:fs";
 import path from "node:path";
-import { cert, getApps, initializeApp, type App, type ServiceAccount } from "firebase-admin/app";
+import { applicationDefault, cert, getApps, initializeApp, type App, type ServiceAccount } from "firebase-admin/app";
 import { getAuth, type Auth } from "firebase-admin/auth";
 import { getFirestore, FieldValue, Timestamp, type Firestore } from "firebase-admin/firestore";
 
-function loadServiceAccount(): ServiceAccount {
+/**
+ * Charge explicitement un service account depuis un fichier ou un JSON inline.
+ * Renvoie null si aucun n'est fourni — on retombe alors sur les Application
+ * Default Credentials (cas App Hosting / Cloud Run, où le runtime a déjà un
+ * service account attaché, donc aucune clé à stocker).
+ */
+function loadServiceAccount(): ServiceAccount | null {
   const filePath = process.env.FIREBASE_ADMIN_SERVICE_ACCOUNT_PATH;
   const rawJson = process.env.FIREBASE_ADMIN_SERVICE_ACCOUNT;
 
@@ -21,9 +27,7 @@ function loadServiceAccount(): ServiceAccount {
       throw new Error(`Failed to parse FIREBASE_ADMIN_SERVICE_ACCOUNT JSON: ${(err as Error).message}`);
     }
   } else {
-    throw new Error(
-      "Missing FIREBASE_ADMIN_SERVICE_ACCOUNT_PATH or FIREBASE_ADMIN_SERVICE_ACCOUNT in environment"
-    );
+    return null;
   }
 
   return {
@@ -38,7 +42,14 @@ let cachedApp: App | null = null;
 function getAdminApp(): App {
   if (cachedApp) return cachedApp;
   const existing = getApps()[0];
-  cachedApp = existing ?? initializeApp({ credential: cert(loadServiceAccount()) });
+  if (existing) {
+    cachedApp = existing;
+    return cachedApp;
+  }
+  const serviceAccount = loadServiceAccount();
+  cachedApp = initializeApp({
+    credential: serviceAccount ? cert(serviceAccount) : applicationDefault()
+  });
   return cachedApp;
 }
 

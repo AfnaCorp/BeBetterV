@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Bot,
   Heart,
   Moon,
+  NotebookPen,
   Scale,
   Sparkles,
   Sun,
@@ -12,81 +12,224 @@ import {
 } from "lucide-react";
 import { useAppData } from "@/components/app-data-provider";
 import { CoachWriteBanner } from "@/components/coach/coach-write-banner";
-import { toISODate, todayISODate } from "@/lib/utils/dates";
+import { DateStrip } from "@/components/ui/date-strip";
+import { Textarea } from "@/components/ui/input";
+import { useToast } from "@/components/ui/toast";
+import { openCoach } from "@/lib/coach-feedback";
+import { formatDayLabel, useSelectedDate } from "@/lib/utils/timeline";
 import type { DayLog, MealEntry, SleepEntry, WeightEntry } from "@/types";
 
 function dayKey(iso: string) {
   return iso.slice(0, 10);
 }
 
-function formatDayLabel(iso: string) {
-  const d = new Date(`${iso}T00:00:00`);
-  const today = new Date();
-  const yest = new Date();
-  yest.setDate(today.getDate() - 1);
-  const todayKey = toISODate(today);
-  const yestKey = toISODate(yest);
-  if (iso === todayKey) return "Aujourd'hui";
-  if (iso === yestKey) return "Hier";
-  return d.toLocaleDateString("fr-FR", { weekday: "long", day: "2-digit", month: "long" });
+interface DayBucket {
+  weight?: WeightEntry;
+  sleep?: SleepEntry;
+  meals: MealEntry[];
+  log?: DayLog;
 }
 
-function EmptyState({ label }: { label: string }) {
+type MetricId = keyof Pick<DayLog, "energy" | "wellbeing" | "meaning">;
+
+const METRICS: {
+  id: MetricId;
+  label: string;
+  icon: typeof Sun;
+}[] = [
+  { id: "energy", label: "Énergie", icon: Sun },
+  { id: "wellbeing", label: "Bien-être", icon: Heart },
+  { id: "meaning", label: "Sens", icon: Sparkles },
+];
+
+/**
+ * Carte bien-être : un en-tête résumé (icône + nom court + score par métrique)
+ * qui sert de légende, puis une ligne icône + barre éditable par métrique.
+ */
+function WellbeingCard({
+  log,
+  onSet,
+}: {
+  log: DayLog | undefined;
+  onSet: (field: MetricId, value: number) => void;
+}) {
   return (
-    <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
-      <Bot className="h-4 w-4 shrink-0" />
-      <span>{label}</span>
+    <div className="neu-surface space-y-4 rounded-2xl px-4 py-4 sm:px-5">
+      {/* Résumé / légende des 3 métriques */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+        {METRICS.map((m) => {
+          const Icon = m.icon;
+          const v = log?.[m.id];
+          return (
+            <div key={m.id} className="flex items-center gap-1.5">
+              <Icon className="h-3.5 w-3.5 shrink-0 text-primary" />
+              <span className="text-xs font-medium text-foreground">{m.label}</span>
+              <span className="text-sm font-semibold tabular-nums text-muted-foreground">
+                {v ?? "—"}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Une ligne icône + barre par métrique */}
+      <div className="space-y-2.5">
+        {METRICS.map((m) => (
+          <MetricRow
+            key={m.id}
+            label={m.label}
+            icon={m.icon}
+            value={log?.[m.id]}
+            onChange={(v) => onSet(m.id, v)}
+          />
+        ))}
+      </div>
     </div>
   );
 }
 
-interface DayBucket {
-  date: string;
-  weight?: WeightEntry;
-  sleep?: SleepEntry;
-  meals: MealEntry[];
+/** Ligne de notation 1→5 compacte : icône + barre segmentée éditable. */
+function MetricRow({
+  label,
+  icon: Icon,
+  value,
+  onChange,
+}: {
+  label: string;
+  icon: typeof Sun;
+  value: number | undefined;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <Icon className="h-4 w-4 shrink-0 text-primary" aria-label={label} />
+      <div className="flex flex-1 gap-1.5">
+        {[1, 2, 3, 4, 5].map((n) => {
+          const active = value != null && n <= value;
+          return (
+            <button
+              key={n}
+              type="button"
+              onClick={() => onChange(n)}
+              aria-label={`${label} ${n} sur 5`}
+              aria-pressed={active}
+              className={`h-7 flex-1 rounded-md transition active:scale-90 ${
+                active ? "gradient-accent shadow-sm" : "neu-inset hover:brightness-95"
+              }`}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
-const TIMELINE_DAYS = 30;
-
-function buildTimeline(days = TIMELINE_DAYS): string[] {
-  const out: string[] = [];
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(today.getDate() - i);
-    out.push(toISODate(d));
+/** Ligne de mesure (poids / sommeil). Si absente : pastille + invite coach. */
+function MeasureRow({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof Sun;
+  label: string;
+  value: React.ReactNode | null;
+}) {
+  if (value == null) {
+    return (
+      <div className="flex items-center gap-3 rounded-xl px-3 py-2.5">
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full neu-inset">
+          <Icon className="h-4 w-4 text-muted-foreground" />
+        </span>
+        <span className="flex-1 text-sm font-medium text-muted-foreground">{label}</span>
+        <button
+          type="button"
+          onClick={openCoach}
+          className="neu-pressable shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold text-primary"
+        >
+          Demander au coach
+        </button>
+      </div>
+    );
   }
-  return out;
+  return (
+    <div className="flex items-center gap-3 rounded-xl px-3 py-2.5 neu-surface-sm">
+      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full gradient-accent">
+        <Icon className="h-4 w-4 text-white" />
+      </span>
+      <span className="flex-1 text-sm font-medium text-foreground">{label}</span>
+      <span className="text-sm font-semibold text-foreground">{value}</span>
+    </div>
+  );
 }
 
-const SHORT_DAYS = ["dim", "lun", "mar", "mer", "jeu", "ven", "sam"];
+/**
+ * Note libre de la journée (résumé / raisons). Éditable par l'utilisateur ET par
+ * le coach (champ `notes` du dayLog). On resynchronise sur les éditions externes
+ * tant que le champ n'a pas le focus, pour ne pas écraser une saisie en cours.
+ */
+function DayNote({
+  note,
+  onSave,
+}: {
+  note: string;
+  onSave: (value: string) => Promise<void>;
+}) {
+  const [value, setValue] = useState(note);
+  const [focused, setFocused] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const ref = useRef<HTMLTextAreaElement>(null);
 
-function SuiviTab() {
-  const { weights, sleep, meals } = useAppData();
-  const timeline = useMemo(() => buildTimeline(), []);
-  const todayKey = timeline[timeline.length - 1];
-  const [selected, setSelected] = useState<string>(todayKey);
-  const stripRef = useRef<HTMLDivElement>(null);
-  const selectedRef = useRef<HTMLButtonElement>(null);
-
+  // Reflète une mise à jour externe (agent) sans interrompre la frappe.
   useEffect(() => {
-    selectedRef.current?.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
-  }, [selected]);
+    if (!focused) setValue(note);
+  }, [note, focused]);
 
-  useEffect(() => {
-    const el = stripRef.current;
-    if (el) el.scrollLeft = el.scrollWidth;
-  }, []);
+  const commit = async () => {
+    setFocused(false);
+    if (value.trim() === note.trim()) return;
+    setSaving(true);
+    try {
+      await onSave(value.trim());
+    } finally {
+      setSaving(false);
+    }
+  };
 
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between px-1">
+        <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <NotebookPen className="h-3.5 w-3.5" />
+          Note du jour
+        </p>
+        {saving && <span className="text-[11px] text-muted-foreground">Enregistrement…</span>}
+      </div>
+      <Textarea
+        ref={ref}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onFocus={() => setFocused(true)}
+        onBlur={commit}
+        placeholder="Comment s'est passée ta journée, et pourquoi ? (le coach peut compléter)"
+        className="min-h-24"
+      />
+    </div>
+  );
+}
+
+export default function JournalPage() {
+  const { weights, sleep, meals, dayLogs, upsertDayLog } = useAppData();
+  const [selected, setSelected] = useSelectedDate();
+  const toast = useToast();
+
+  // Toutes les données indexées par jour ISO.
   const buckets = useMemo<Map<string, DayBucket>>(() => {
     const map = new Map<string, DayBucket>();
     const get = (iso: string) => {
       const key = dayKey(iso);
       let b = map.get(key);
       if (!b) {
-        b = { date: key, meals: [] };
+        b = { meals: [] };
         map.set(key, b);
       }
       return b;
@@ -100,269 +243,118 @@ function SuiviTab() {
       if (!b.sleep || s.createdAt > b.sleep.createdAt) b.sleep = s;
     });
     meals.forEach((m) => get(m.date).meals.push(m));
-    return map;
-  }, [weights, sleep, meals]);
-
-  const selectedBucket = buckets.get(selected);
-  return (
-    <div className="space-y-5">
-      <div className="-mx-4 sm:-mx-5">
-        <div
-          ref={stripRef}
-          role="tablist"
-          aria-label="Choisir une date"
-          className="flex snap-x snap-mandatory gap-2 overflow-x-auto px-4 pb-1 pt-1 sm:px-5 [&::-webkit-scrollbar]:hidden"
-          style={{ scrollbarWidth: "none" }}
-        >
-          {timeline.map((iso) => {
-            const d = new Date(`${iso}T00:00:00`);
-            const isSelected = iso === selected;
-            const isToday = iso === todayKey;
-            const has = buckets.has(iso);
-            return (
-              <button
-                key={iso}
-                ref={isSelected ? selectedRef : undefined}
-                role="tab"
-                aria-selected={isSelected}
-                onClick={() => setSelected(iso)}
-                className={`flex w-12 shrink-0 snap-center flex-col items-center gap-1 rounded-2xl px-1 py-2 transition ${
-                  isSelected
-                    ? "gradient-accent text-white shadow-md"
-                    : "neu-surface-sm text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <span className={`text-[10px] uppercase tracking-wide ${isSelected ? "text-white/80" : ""}`}>
-                  {SHORT_DAYS[d.getDay()]}
-                </span>
-                <span className={`text-base font-semibold ${isSelected ? "text-white" : "text-foreground"}`}>
-                  {d.getDate()}
-                </span>
-                <span
-                  className={`h-1.5 w-1.5 rounded-full transition ${
-                    has
-                      ? isSelected
-                        ? "bg-white"
-                        : "bg-accent-gradient gradient-accent"
-                      : "bg-transparent"
-                  } ${isToday && !isSelected ? "ring-2 ring-primary/40" : ""}`}
-                  aria-hidden
-                />
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div>
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          {formatDayLabel(selected)}
-        </p>
-
-        {!selectedBucket ? (
-          <EmptyState label="Aucune donnée ce jour. Parle au coach pour en ajouter." />
-        ) : (
-          <div className="space-y-1.5">
-            {selectedBucket.weight && (
-              <div className="flex items-center gap-3 rounded-xl px-3 py-2 neu-surface-sm">
-                <Scale className="h-4 w-4 shrink-0 text-primary" />
-                <span className="flex-1 text-sm text-foreground">Poids</span>
-                <span className="text-sm font-semibold text-foreground">{selectedBucket.weight.kg} kg</span>
-              </div>
-            )}
-            {selectedBucket.sleep && (
-              <div className="flex items-center gap-3 rounded-xl px-3 py-2 neu-surface-sm">
-                <Moon className="h-4 w-4 shrink-0 text-primary" />
-                <span className="flex-1 text-sm text-foreground">Sommeil</span>
-                <span className="text-sm font-semibold text-foreground">
-                  {selectedBucket.sleep.hours}h
-                  {selectedBucket.sleep.quality ? (
-                    <span className="font-normal text-muted-foreground"> · {selectedBucket.sleep.quality}/5</span>
-                  ) : null}
-                </span>
-              </div>
-            )}
-            {selectedBucket.meals.map((m) => (
-              <div key={m.id} className="flex items-start gap-3 rounded-xl px-3 py-2 neu-surface-sm">
-                <UtensilsCrossed className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                <div className="flex-1 text-sm text-foreground">
-                  {m.description}
-                  {m.type && (
-                    <span className="ml-2 text-xs uppercase tracking-wide text-muted-foreground">
-                      {m.type === "petit_dej" ? "petit déj" : m.type}
-                    </span>
-                  )}
-                </div>
-                {m.kcal != null && (
-                  <span className="text-xs text-muted-foreground">{m.kcal} kcal</span>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-const METRICS: {
-  id: keyof Pick<DayLog, "energy" | "wellbeing" | "meaning">;
-  label: string;
-  hint: string;
-  icon: typeof Sun;
-}[] = [
-  { id: "energy", label: "Énergie", hint: "Physique / vitalité", icon: Sun },
-  { id: "wellbeing", label: "Bien-être", hint: "Émotionnel / mental", icon: Heart },
-  { id: "meaning", label: "Sens", hint: "Utilité de ta journée", icon: Sparkles }
-];
-
-function MetricRow({
-  label,
-  hint,
-  icon: Icon,
-  value,
-  onChange
-}: {
-  label: string;
-  hint: string;
-  icon: typeof Sun;
-  value: number | undefined;
-  onChange: (v: number) => void;
-}) {
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        <Icon className="h-4 w-4 text-primary" />
-        <div className="flex-1">
-          <p className="text-sm font-medium text-foreground">{label}</p>
-          <p className="text-xs text-muted-foreground">{hint}</p>
-        </div>
-        <span className="text-sm font-semibold text-foreground">{value ? `${value}/5` : "—"}</span>
-      </div>
-      <div className="flex gap-1.5">
-        {[1, 2, 3, 4, 5].map((n) => {
-          const active = value != null && n <= value;
-          return (
-            <button
-              key={n}
-              type="button"
-              onClick={() => onChange(n)}
-              aria-label={`${label} ${n} sur 5`}
-              className={`h-8 flex-1 rounded-lg transition ${
-                active ? "gradient-accent shadow-sm" : "neu-inset"
-              }`}
-            />
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function BienEtreTab() {
-  const { dayLogs, upsertDayLog } = useAppData();
-  const todayKey = todayISODate();
-
-  const today = useMemo(
-    () => dayLogs.find((d) => dayKey(d.date) === todayKey),
-    [dayLogs, todayKey]
-  );
-  const history = useMemo(
-    () => dayLogs.filter((d) => dayKey(d.date) !== todayKey).slice(0, 14),
-    [dayLogs, todayKey]
-  );
-
-  const set = async (
-    field: "energy" | "engagement" | "wellbeing" | "meaning",
-    value: number
-  ) => {
-    await upsertDayLog({
-      id: today?.id,
-      date: today?.date ?? todayKey,
-      energy: today?.energy ?? 0,
-      engagement: today?.engagement ?? 0,
-      wellbeing: today?.wellbeing,
-      meaning: today?.meaning,
-      notes: today?.notes,
-      source: "manual",
-      [field]: value
+    dayLogs.forEach((d) => {
+      get(d.date).log = d;
     });
+    return map;
+  }, [weights, sleep, meals, dayLogs]);
+
+  const bucket = buckets.get(selected);
+  const log = bucket?.log;
+
+  const setMetric = async (field: MetricId, value: number) => {
+    try {
+      await upsertDayLog({
+        id: log?.id,
+        date: log?.date ?? selected,
+        energy: log?.energy ?? 0,
+        engagement: log?.engagement ?? 0,
+        wellbeing: log?.wellbeing,
+        meaning: log?.meaning,
+        notes: log?.notes,
+        source: "manual",
+        [field]: value,
+      });
+      const label = METRICS.find((m) => m.id === field)?.label ?? "Note";
+      toast(`${label} : ${value}/5 enregistré`);
+    } catch {
+      toast("Échec de l'enregistrement. Réessaie.", "error");
+    }
+  };
+
+  const saveNote = async (notes: string) => {
+    try {
+      await upsertDayLog({
+        id: log?.id,
+        date: log?.date ?? selected,
+        energy: log?.energy ?? 0,
+        engagement: log?.engagement ?? 0,
+        wellbeing: log?.wellbeing,
+        meaning: log?.meaning,
+        notes,
+        source: "manual",
+      });
+      toast("Note enregistrée");
+    } catch {
+      toast("Échec de l'enregistrement. Réessaie.", "error");
+    }
   };
 
   return (
     <div className="space-y-6">
-      <div>
-        <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Aujourd'hui
-        </p>
-        <div className="space-y-5">
-          {METRICS.map((m) => (
-            <MetricRow
-              key={m.id}
-              label={m.label}
-              hint={m.hint}
-              icon={m.icon}
-              value={today?.[m.id]}
-              onChange={(v) => void set(m.id, v)}
-            />
-          ))}
-        </div>
-      </div>
-
-      {history.length > 0 && (
-        <div>
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Historique
-          </p>
-          <div className="space-y-1">
-            {history.map((d) => (
-              <div
-                key={d.id}
-                className="flex items-center justify-between gap-2 py-2.5 border-b border-border/50 last:border-0"
-              >
-                <span className="text-sm capitalize text-muted-foreground">{formatDayLabel(dayKey(d.date))}</span>
-                <div className="flex items-center gap-3 text-xs text-foreground">
-                  <span title="Énergie" className="flex items-center gap-1">
-                    <Sun className="h-3 w-3 text-primary" /> {d.energy || "—"}
-                  </span>
-                  <span title="Bien-être" className="flex items-center gap-1">
-                    <Heart className="h-3 w-3 text-primary" /> {d.wellbeing ?? "—"}
-                  </span>
-                  <span title="Sens" className="flex items-center gap-1">
-                    <Sparkles className="h-3 w-3 text-primary" /> {d.meaning ?? "—"}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-export default function JournalPage() {
-  return (
-    <div className="space-y-4">
       <CoachWriteBanner route="/journal" />
       <h1 className="text-2xl font-semibold text-foreground">Journal</h1>
 
-      <div className="neu-surface space-y-7 rounded-2xl px-4 py-4 sm:px-5 sm:py-5">
-        <section className="space-y-4">
-          <div className="flex items-center gap-2">
-            <Scale className="h-4 w-4 text-primary" />
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Suivi</h2>
-          </div>
-          <SuiviTab />
-        </section>
+      <div className="space-y-5">
+        <DateStrip
+          selected={selected}
+          onSelect={setSelected}
+          hasData={(iso) => buckets.has(iso)}
+        />
 
-        <section className="space-y-4 border-t border-border/50 pt-6">
-          <div className="flex items-center gap-2">
-            <Heart className="h-4 w-4 text-primary" />
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Bien-être</h2>
-          </div>
-          <BienEtreTab />
-        </section>
+        <p className="text-xs font-semibold uppercase tracking-wide capitalize text-muted-foreground">
+          {formatDayLabel(selected)}
+        </p>
+
+        {/* Bien-être — éditable */}
+        <WellbeingCard log={log} onSet={(f, v) => void setMetric(f, v)} />
+
+        {/* Mesures — lecture seule (alimentées par le coach) */}
+        <div className="space-y-2">
+          <p className="px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Mesures
+          </p>
+          <MeasureRow
+            icon={Scale}
+            label="Poids"
+            value={bucket?.weight ? `${bucket.weight.kg} kg` : null}
+          />
+          <MeasureRow
+            icon={Moon}
+            label="Sommeil"
+            value={
+              bucket?.sleep ? (
+                <>
+                  {bucket.sleep.hours}h
+                  {bucket.sleep.quality ? (
+                    <span className="font-normal text-muted-foreground"> · {bucket.sleep.quality}/5</span>
+                  ) : null}
+                </>
+              ) : null
+            }
+          />
+
+          {/* Repas du jour */}
+          {bucket?.meals.map((m) => (
+            <div key={m.id} className="flex items-start gap-3 rounded-xl px-3 py-2.5 neu-surface-sm">
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full gradient-accent">
+                <UtensilsCrossed className="h-4 w-4 text-white" />
+              </span>
+              <div className="flex-1 text-sm text-foreground">
+                {m.description}
+                {m.type && (
+                  <span className="ml-2 text-xs uppercase tracking-wide text-muted-foreground">
+                    {m.type === "petit_dej" ? "petit déj" : m.type}
+                  </span>
+                )}
+              </div>
+              {m.kcal != null && <span className="text-xs text-muted-foreground">{m.kcal} kcal</span>}
+            </div>
+          ))}
+        </div>
+
+        {/* Note libre du jour — éditable par l'utilisateur et le coach */}
+        <DayNote key={selected} note={log?.notes ?? ""} onSave={saveNote} />
       </div>
     </div>
   );

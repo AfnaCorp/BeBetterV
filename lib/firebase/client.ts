@@ -1,6 +1,6 @@
 import { getApps, initializeApp, type FirebaseApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider, type Auth } from "firebase/auth";
-import { getFirestore, type Firestore } from "firebase/firestore";
+import { getFirestore, initializeFirestore, type Firestore } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -11,7 +11,14 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID
 };
 
-export const firebaseApp: FirebaseApp = getApps()[0] ?? initializeApp(firebaseConfig);
+const existingApp = getApps()[0];
+export const firebaseApp: FirebaseApp = existingApp ?? initializeApp(firebaseConfig);
 export const firebaseAuth: Auth = getAuth(firebaseApp);
-export const firestore: Firestore = getFirestore(firebaseApp);
+// `ignoreUndefinedProperties` : Firestore rejette les valeurs `undefined` par défaut,
+// ce qui fait planter silencieusement les écritures partielles (ex. premier dayLog du jour).
+// `initializeFirestore` ne peut être appelé qu'une fois par app : si l'app était déjà
+// initialisée (HMR Next), on réutilise l'instance existante via `getFirestore`.
+export const firestore: Firestore = existingApp
+  ? getFirestore(firebaseApp)
+  : initializeFirestore(firebaseApp, { ignoreUndefinedProperties: true });
 export const googleProvider = new GoogleAuthProvider();

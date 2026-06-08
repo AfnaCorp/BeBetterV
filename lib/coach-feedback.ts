@@ -42,6 +42,21 @@ export function targetRoute(kinds: WriteKind[]): string | null {
   return routes[0];
 }
 
+const OPEN_COACH_EVENT = "open-coach";
+
+/** Ouvre la bulle coach flottante depuis n'importe où (ex. état vide du Journal). */
+export function openCoach() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(OPEN_COACH_EVENT));
+}
+
+/** S'abonne aux demandes d'ouverture du coach. Retourne la fonction de cleanup. */
+export function onOpenCoach(handler: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  window.addEventListener(OPEN_COACH_EVENT, handler);
+  return () => window.removeEventListener(OPEN_COACH_EVENT, handler);
+}
+
 /** Vibration haptique courte (mobile). Sans effet sur desktop / iOS Safari. */
 export function hapticPulse() {
   if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {

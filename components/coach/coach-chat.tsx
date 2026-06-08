@@ -8,6 +8,7 @@ import { useAppData } from "@/components/app-data-provider";
 import { useAuth } from "@/components/auth-provider";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/input";
+import { useToast } from "@/components/ui/toast";
 import { MessageBubble } from "./message-bubble";
 import { cn } from "@/lib/utils/cn";
 import { toISODate, todayISODate } from "@/lib/utils/dates";
@@ -43,6 +44,7 @@ export function CoachChat({ variant = "page" }: { variant?: "page" | "floating" 
   const { messages, profile, weights, sleep, meals, sessions, dayLogs, habits, facts, wiki, programs } = useAppData();
   const { user } = useAuth();
   const router = useRouter();
+  const toast = useToast();
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -174,9 +176,11 @@ export function CoachChat({ variant = "page" }: { variant?: "page" | "floating" 
       };
       setPending((p) => [...p, assistantLocal]);
 
-      // Feedback sur écriture du coach : vibration + navigation douce vers la page concernée.
+      // Feedback sur écriture du coach : toast récap + vibration + navigation douce.
       if (data.writes && data.writes.length > 0) {
         hapticPulse();
+        const first = data.writes[0].summary;
+        toast(data.writes.length > 1 ? `${first} (+${data.writes.length - 1})` : first);
         const route = targetRoute(data.writes.map((w) => w.kind));
         if (route) {
           flagCoachWrite(route);

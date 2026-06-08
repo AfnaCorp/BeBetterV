@@ -5,6 +5,7 @@ import { MessageCircle, X } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
 import { useAppData } from "@/components/app-data-provider";
 import { DEFAULT_COACH_NAME } from "@/lib/coach-avatars";
+import { onOpenCoach } from "@/lib/coach-feedback";
 import { CoachAvatarBadge } from "./coach-avatar";
 import { CoachChat } from "./coach-chat";
 
@@ -77,6 +78,9 @@ export function FloatingCoach() {
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
+
+  // Ouverture déclenchée depuis ailleurs (ex. bouton "Demander au coach").
+  useEffect(() => onOpenCoach(() => setOpen(true)), []);
 
   const persist = useCallback((pos: Position) => {
     try {

@@ -38,6 +38,19 @@ export async function readProfile(uid: string) {
   return snap.exists() ? { id: snap.id, ...(snap.data() as DocumentData) } : null;
 }
 
+/** Souscription live au document profil (`users/{uid}`). */
+export function subscribeProfile<T extends DocumentData>(
+  uid: string,
+  onData: (item: WithId<T> | null) => void,
+  onError?: (err: FirestoreError) => void
+): Unsubscribe {
+  return onSnapshot(
+    profileRef(uid),
+    (snap) => onData(snap.exists() ? { id: snap.id, ...(snap.data() as T) } : null),
+    onError
+  );
+}
+
 export async function writeProfile(uid: string, data: DocumentData) {
   await setDoc(profileRef(uid), { ...data, updatedAt: serverTimestamp() }, { merge: true });
 }

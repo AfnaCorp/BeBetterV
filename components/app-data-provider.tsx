@@ -4,7 +4,8 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { limit, orderBy } from "firebase/firestore";
 import { useAuth } from "@/components/auth-provider";
 import { COLLECTIONS } from "@/lib/firebase/collections";
-import { clearField, createEntry, deleteEntry, subscribe, subscribeDoc, updateEntry, writeProfile } from "@/lib/firebase/repo";
+import { clearField, createEntry, deleteEntry, setEntry, subscribe, subscribeDoc, subscribeProfile, updateEntry, writeProfile } from "@/lib/firebase/repo";
+import { toISODate } from "@/lib/utils/dates";
 import type {
   ChatMessage,
   DayLog,
@@ -88,7 +89,22 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    let profileBootstrapped = false;
     const subs = [
+      subscribeProfile<UserProfile>(uid, (p) => {
+        setProfile(p);
+        // Première connexion : aucun doc profil → on en crée un minimal à partir
+        // de l'utilisateur Auth, pour que le rename du coach ait une base durable
+        // et que le setup initial puisse se déclencher.
+        if (p == null && !profileBootstrapped) {
+          profileBootstrapped = true;
+          void writeProfile(uid, {
+            name: user?.displayName ?? "",
+            email: user?.email ?? "",
+            createdAt: new Date().toISOString(),
+          });
+        }
+      }),
       subscribe<WeightEntry>(uid, COLLECTIONS.weights, setWeights, undefined, orderBy("date", "desc")),
       subscribe<SleepEntry>(uid, COLLECTIONS.sleep, setSleep, undefined, orderBy("date", "desc")),
       subscribe<MealEntry>(uid, COLLECTIONS.meals, setMeals, undefined, orderBy("date", "desc")),
@@ -142,11 +158,12 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       addSession: (entry) => createEntry(requireUid(), COLLECTIONS.sessions, entry),
       upsertDayLog: async ({ id, ...entry }) => {
         const u = requireUid();
-        if (id) {
-          await updateEntry(u, COLLECTIONS.dayLogs, id, entry);
-          return id;
-        }
-        return createEntry(u, COLLECTIONS.dayLogs, entry);
+        // Un seul dayLog par jour : l'id du doc = la date `YYYY-MM-DD`.
+        // Même convention que le coach (coach-executor logDay), donc UI et agent
+        // écrivent dans le même document — pas de doublon ni d'écrasement croisé.
+        const docId = id ?? toISODate(new Date(entry.date));
+        await setEntry(u, COLLECTIONS.dayLogs, docId, entry);
+        return docId;
       },
       addHabit: (entry) => createEntry(requireUid(), COLLECTIONS.habits, entry),
       updateHabit: (id, patch) => updateEntry(requireUid(), COLLECTIONS.habits, id, patch),

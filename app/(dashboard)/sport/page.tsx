@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Dumbbell,
   Plus,
@@ -29,7 +29,9 @@ import {
   getExercise,
   searchExercises,
 } from "@/lib/exercise-bank";
+import { DateStrip } from "@/components/ui/date-strip";
 import { toISODate } from "@/lib/utils/dates";
+import { formatDayLabel, useSelectedDate } from "@/lib/utils/timeline";
 import type {
   ExerciseDef,
   MuscleGroup,
@@ -138,33 +140,6 @@ function NumberField({
 
 const isoDay = toISODate;
 
-const SHORT_DAYS = ["dim", "lun", "mar", "mer", "jeu", "ven", "sam"];
-
-const TIMELINE_DAYS = 30;
-
-/** Les `days` derniers jours, du plus ancien au plus récent (aujourd'hui en dernier). */
-function buildTimeline(days = TIMELINE_DAYS): Date[] {
-  const out: Date[] = [];
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(today.getDate() - i);
-    out.push(d);
-  }
-  return out;
-}
-
-function formatDayLabel(iso: string) {
-  const d = new Date(`${iso}T00:00:00`);
-  const today = new Date();
-  const yest = new Date();
-  yest.setDate(today.getDate() - 1);
-  if (iso === isoDay(today)) return "Aujourd'hui";
-  if (iso === isoDay(yest)) return "Hier";
-  return d.toLocaleDateString("fr-FR", { weekday: "long", day: "2-digit", month: "long" });
-}
-
 /** Jours de la semaine, lundi = index 0 (ordre des séances du programme). */
 const WEEKDAYS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"] as const;
 
@@ -253,11 +228,8 @@ function TimelineView({
   onRedo: (session: SessionEntry) => void;
 }) {
   const { sessions } = useAppData();
-  const timeline = useMemo(() => buildTimeline(), []);
-  const todayIso = isoDay(timeline[timeline.length - 1]);
-  const [selected, setSelected] = useState<string>(todayIso);
-  const stripRef = useRef<HTMLDivElement>(null);
-  const selectedRef = useRef<HTMLButtonElement>(null);
+  const todayIso = isoDay(new Date());
+  const [selected, setSelected] = useSelectedDate();
 
   // Séances réalisées indexées par jour (ISO).
   const doneByDay = useMemo(() => {
@@ -271,15 +243,6 @@ function TimelineView({
     return map;
   }, [sessions]);
 
-  useEffect(() => {
-    selectedRef.current?.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
-  }, [selected]);
-
-  useEffect(() => {
-    const el = stripRef.current;
-    if (el) el.scrollLeft = el.scrollWidth;
-  }, []);
-
   const selectedDate = new Date(`${selected}T00:00:00`);
   const doneSessions = doneByDay.get(selected) ?? [];
   const planned = plannedFor(program, selectedDate);
@@ -289,54 +252,11 @@ function TimelineView({
 
   return (
     <div className="space-y-5">
-      {/* Frise chronologique horizontale */}
-      <div className="-mx-4 sm:-mx-5">
-        <div
-          ref={stripRef}
-          role="tablist"
-          aria-label="Choisir une date"
-          className="flex snap-x snap-mandatory gap-2 overflow-x-auto px-4 pb-1 pt-1 sm:px-5 [&::-webkit-scrollbar]:hidden"
-          style={{ scrollbarWidth: "none" }}
-        >
-          {timeline.map((day) => {
-            const iso = isoDay(day);
-            const isSelected = iso === selected;
-            const isToday = iso === todayIso;
-            const has = (doneByDay.get(iso)?.length ?? 0) > 0;
-            return (
-              <button
-                key={iso}
-                ref={isSelected ? selectedRef : undefined}
-                role="tab"
-                aria-selected={isSelected}
-                onClick={() => setSelected(iso)}
-                className={`flex w-12 shrink-0 snap-center flex-col items-center gap-1 rounded-2xl px-1 py-2 transition ${
-                  isSelected
-                    ? "gradient-accent text-white shadow-md"
-                    : "neu-surface-sm text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <span className={`text-[10px] uppercase tracking-wide ${isSelected ? "text-white/80" : ""}`}>
-                  {SHORT_DAYS[day.getDay()]}
-                </span>
-                <span className={`text-base font-semibold ${isSelected ? "text-white" : "text-foreground"}`}>
-                  {day.getDate()}
-                </span>
-                <span
-                  className={`h-1.5 w-1.5 rounded-full transition ${
-                    has
-                      ? isSelected
-                        ? "bg-white"
-                        : "bg-accent-gradient gradient-accent"
-                      : "bg-transparent"
-                  } ${isToday && !isSelected ? "ring-2 ring-primary/40" : ""}`}
-                  aria-hidden
-                />
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      <DateStrip
+        selected={selected}
+        onSelect={setSelected}
+        hasData={(iso) => (doneByDay.get(iso)?.length ?? 0) > 0}
+      />
 
       {/* Détail du jour sélectionné */}
       <div>

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { AppDataProvider } from "@/components/app-data-provider";
 import { AuthProvider } from "@/components/auth-provider";
+import { ToastProvider } from "@/components/ui/toast";
 
 export const metadata: Metadata = {
   title: "BeBetter - Coach sportif agentic",
@@ -17,7 +18,9 @@ export default function RootLayout({
     <html lang="fr">
       <body className="antialiased">
         <AuthProvider>
-          <AppDataProvider>{children}</AppDataProvider>
+          <AppDataProvider>
+            <ToastProvider>{children}</ToastProvider>
+          </AppDataProvider>
         </AuthProvider>
       </body>
     </html>
