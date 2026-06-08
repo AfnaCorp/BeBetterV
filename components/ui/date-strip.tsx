@@ -22,17 +22,18 @@ export function DateStrip({
   days?: number;
 }) {
   const timeline = days ? buildTimeline(days) : buildTimeline();
-  const todayIso = toISODate(timeline[timeline.length - 1]);
+  const todayIso = toISODate(new Date());
   const stripRef = useRef<HTMLDivElement>(null);
   const selectedRef = useRef<HTMLButtonElement>(null);
+  const todayRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     selectedRef.current?.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
   }, [selected]);
 
+  // Au montage, centrer sur aujourd'hui (les jours à venir restent accessibles à droite).
   useEffect(() => {
-    const el = stripRef.current;
-    if (el) el.scrollLeft = el.scrollWidth;
+    todayRef.current?.scrollIntoView({ inline: "center", block: "nearest" });
   }, []);
 
   return (
@@ -52,7 +53,7 @@ export function DateStrip({
           return (
             <button
               key={iso}
-              ref={isSelected ? selectedRef : undefined}
+              ref={isSelected ? selectedRef : isToday ? todayRef : undefined}
               role="tab"
               aria-selected={isSelected}
               onClick={() => onSelect(iso)}

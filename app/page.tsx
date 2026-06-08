@@ -8,18 +8,18 @@ import { Button } from "@/components/ui/button";
 const features = [
   {
     icon: MessageSquare,
-    title: "Un coach qui t'écoute",
-    text: "Raconte ta journée comme à un ami. Il te répond, t'encourage et te dit quoi ajuster."
+    title: "Écris, c'est tracké",
+    text: "Raconte ta journée en une phrase. L'app saisit poids, sommeil, repas et séances à ta place."
   },
   {
     icon: LineChart,
     title: "Tout est mesuré",
-    text: "Poids, sommeil, repas, charges et reps : chaque détail est capté et suivi avec précision."
+    text: "Charges, reps, sommeil, calories : chaque détail est capté et suivi avec précision."
   },
   {
     icon: CalendarCheck,
-    title: "Tu progresses, pour de vrai",
-    text: "Tendances claires et corrélations sommeil ↔ performance pour des résultats qui se voient."
+    title: "Ta progression, au clair",
+    text: "Tendances et corrélations sommeil ↔ performance pour voir ce qui marche vraiment."
   }
 ];
 
@@ -52,15 +52,15 @@ export default function LandingPage() {
         >
           <div className="inline-flex items-center gap-2 rounded-full neu-surface-sm px-4 py-1.5 text-xs uppercase tracking-[0.22em] text-muted-foreground">
             <span className="h-1.5 w-1.5 rounded-full bg-accent-gradient" />
-            Ton coach santé au quotidien
+            Le tracking sans la corvée
           </div>
           <h1 className="mt-7 max-w-2xl text-5xl font-semibold leading-[1.05] tracking-tight text-foreground sm:text-6xl">
             Raconte ta journée.{" "}
-            <span className="gradient-accent-text">On s'occupe du reste.</span>
+            <span className="gradient-accent-text">On note tout.</span>
           </h1>
           <p className="mt-6 max-w-xl text-lg leading-8 text-muted-foreground">
-            Écris comme tu parles — poids, sommeil, repas, séances. Ton coach mesure tout au
-            détail près, te conseille et te garde sur la bonne voie. Tu es accompagné, pas seul.
+            L'outil qui t'aide à tracker ton sport et ta santé sans formulaire. Écris comme tu
+            parles — poids, sommeil, repas, séances — et garde un suivi précis, prêt à analyser.
           </p>
           <div className="mt-9 flex flex-col gap-3 sm:flex-row">
             <Button asChild size="lg">

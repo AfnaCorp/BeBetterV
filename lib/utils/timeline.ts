@@ -4,13 +4,17 @@ import { toISODate } from "./dates";
 export const SHORT_DAYS = ["dim", "lun", "mar", "mer", "jeu", "ven", "sam"];
 
 export const TIMELINE_DAYS = 30;
+export const TIMELINE_FUTURE_DAYS = 30;
 
-/** Les `days` derniers jours, du plus ancien au plus récent (aujourd'hui en dernier). */
-export function buildTimeline(days = TIMELINE_DAYS): Date[] {
+/**
+ * Les `days` derniers jours suivis des `futureDays` jours à venir, du plus
+ * ancien au plus récent. Aujourd'hui se situe à l'index `days - 1`.
+ */
+export function buildTimeline(days = TIMELINE_DAYS, futureDays = TIMELINE_FUTURE_DAYS): Date[] {
   const out: Date[] = [];
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  for (let i = days - 1; i >= 0; i--) {
+  for (let i = days - 1; i >= -futureDays; i--) {
     const d = new Date(today);
     d.setDate(today.getDate() - i);
     out.push(d);

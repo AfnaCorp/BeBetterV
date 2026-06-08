@@ -42,10 +42,7 @@ const METRICS: {
   { id: "meaning", label: "Sens", icon: Sparkles },
 ];
 
-/**
- * Carte bien-être : un en-tête résumé (icône + nom court + score par métrique)
- * qui sert de légende, puis une ligne icône + barre éditable par métrique.
- */
+/** Carte bien-être : une ligne compacte par métrique, sans icône doublée. */
 function WellbeingCard({
   log,
   onSet,
@@ -54,41 +51,21 @@ function WellbeingCard({
   onSet: (field: MetricId, value: number) => void;
 }) {
   return (
-    <div className="neu-surface space-y-4 rounded-2xl px-4 py-4 sm:px-5">
-      {/* Résumé / légende des 3 métriques */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-        {METRICS.map((m) => {
-          const Icon = m.icon;
-          const v = log?.[m.id];
-          return (
-            <div key={m.id} className="flex items-center gap-1.5">
-              <Icon className="h-3.5 w-3.5 shrink-0 text-primary" />
-              <span className="text-xs font-medium text-foreground">{m.label}</span>
-              <span className="text-sm font-semibold tabular-nums text-muted-foreground">
-                {v ?? "—"}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Une ligne icône + barre par métrique */}
-      <div className="space-y-2.5">
-        {METRICS.map((m) => (
-          <MetricRow
-            key={m.id}
-            label={m.label}
-            icon={m.icon}
-            value={log?.[m.id]}
-            onChange={(v) => onSet(m.id, v)}
-          />
-        ))}
-      </div>
+    <div className="neu-surface space-y-2.5 rounded-2xl px-4 py-4 sm:px-5">
+      {METRICS.map((m) => (
+        <MetricRow
+          key={m.id}
+          label={m.label}
+          icon={m.icon}
+          value={log?.[m.id]}
+          onChange={(v) => onSet(m.id, v)}
+        />
+      ))}
     </div>
   );
 }
 
-/** Ligne de notation 1→5 compacte : icône + barre segmentée éditable. */
+/** Ligne de notation 1→5 compacte : libellé + score + barre segmentée éditable. */
 function MetricRow({
   label,
   icon: Icon,
@@ -101,9 +78,15 @@ function MetricRow({
   onChange: (v: number) => void;
 }) {
   return (
-    <div className="flex items-center gap-3">
-      <Icon className="h-4 w-4 shrink-0 text-primary" aria-label={label} />
-      <div className="flex flex-1 gap-1.5">
+    <div className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-3 sm:grid-cols-[7.25rem_minmax(0,1fr)]">
+      <div className="flex min-w-0 items-center gap-1.5">
+        <Icon className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
+        <span className="truncate text-xs font-medium text-foreground">{label}</span>
+        <span className="ml-auto shrink-0 text-sm font-semibold tabular-nums text-muted-foreground">
+          {value ?? "—"}
+        </span>
+      </div>
+      <div className="flex min-w-0 gap-1.5">
         {[1, 2, 3, 4, 5].map((n) => {
           const active = value != null && n <= value;
           return (
