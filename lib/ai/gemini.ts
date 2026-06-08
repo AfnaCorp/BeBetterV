@@ -6,16 +6,23 @@ import {
   type Part
 } from "@google/generative-ai";
 
-const apiKey = process.env.GOOGLE_API_KEY ?? process.env.GEMINI_API_KEY;
-
-if (!apiKey) {
-  throw new Error("Missing GOOGLE_API_KEY (or GEMINI_API_KEY) in environment.");
-}
-
 const TEXT_MODEL = process.env.GEMINI_TEXT_MODEL?.trim() || "gemini-2.5-pro";
 const FAST_MODEL = process.env.GEMINI_FAST_MODEL?.trim() || "gemini-2.5-flash";
 
-const genAI = new GoogleGenerativeAI(apiKey);
+// Initialisation paresseuse : la clé n'est lue qu'au premier appel, pas à
+// l'import du module. Sinon `next build` (qui charge ce module pour collecter
+// les routes) plante quand GOOGLE_API_KEY n'est dispo qu'au RUNTIME (App Hosting).
+let cachedClient: GoogleGenerativeAI | null = null;
+
+function getClient(): GoogleGenerativeAI {
+  if (cachedClient) return cachedClient;
+  const apiKey = process.env.GOOGLE_API_KEY ?? process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("Missing GOOGLE_API_KEY (or GEMINI_API_KEY) in environment.");
+  }
+  cachedClient = new GoogleGenerativeAI(apiKey);
+  return cachedClient;
+}
 
 export interface GeminiTurn {
   role: "user" | "model";
@@ -33,7 +40,7 @@ export async function generateText({
   message: string;
   fast?: boolean;
 }): Promise<string> {
-  const model = genAI.getGenerativeModel({
+  const model = getClient().getGenerativeModel({
     model: fast ? FAST_MODEL : TEXT_MODEL,
     systemInstruction: systemPrompt
   });
@@ -79,7 +86,7 @@ export async function runWithTools({
   onToolEvent,
   maxRounds = 5
 }: RunWithToolsArgs): Promise<string> {
-  const model = genAI.getGenerativeModel({
+  const model = getClient().getGenerativeModel({
     model: TEXT_MODEL,
     systemInstruction: systemPrompt,
     tools: [{ functionDeclarations: tools }]
