@@ -37,6 +37,25 @@ function loadServiceAccount(): ServiceAccount | null {
   } as ServiceAccount;
 }
 
+/**
+ * Déduit le projectId depuis l'environnement. Sur App Hosting / Cloud Run il
+ * arrive via FIREBASE_CONFIG ou GOOGLE_CLOUD_PROJECT ; en local on retombe sur
+ * la config publique. Sans projectId explicite, Firestore reste « not ready ».
+ */
+function resolveProjectId(): string | undefined {
+  if (process.env.GOOGLE_CLOUD_PROJECT) return process.env.GOOGLE_CLOUD_PROJECT;
+  if (process.env.GCLOUD_PROJECT) return process.env.GCLOUD_PROJECT;
+  try {
+    if (process.env.FIREBASE_CONFIG) {
+      const cfg = JSON.parse(process.env.FIREBASE_CONFIG);
+      if (cfg.projectId) return cfg.projectId;
+    }
+  } catch {
+    /* ignore */
+  }
+  return process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+}
+
 let cachedApp: App | null = null;
 
 function getAdminApp(): App {
@@ -47,8 +66,10 @@ function getAdminApp(): App {
     return cachedApp;
   }
   const serviceAccount = loadServiceAccount();
+  const projectId = serviceAccount?.projectId ?? resolveProjectId();
   cachedApp = initializeApp({
-    credential: serviceAccount ? cert(serviceAccount) : applicationDefault()
+    credential: serviceAccount ? cert(serviceAccount) : applicationDefault(),
+    projectId
   });
   return cachedApp;
 }
