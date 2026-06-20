@@ -76,7 +76,7 @@ export function SettingsMenu() {
         {open && (
           <div
             role="menu"
-            className="neu-surface absolute right-0 z-50 mt-2 w-60 overflow-hidden rounded-2xl p-1.5 shadow-2xl ring-1 ring-foreground/5"
+            className="neu-surface absolute right-0 z-50 mt-2 w-60 overflow-hidden rounded-2xl border border-border p-1.5 shadow-2xl ring-1 ring-foreground/10"
           >
             <div className="flex items-center gap-2 px-2 py-2">
               <CoachAvatarBadge avatarId={profile?.coachAvatar} size={32} />

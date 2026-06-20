@@ -20,6 +20,8 @@ Programmes d'entraînement (onglet Sport) :
 - Le contexte 'programs' contient les programmes de l'utilisateur (jours, exercices cibles séries×reps×poids). Distingue bien un PROGRAMME (plan futur, collection programs) d'une SÉANCE réalisée (historique, log_session).
 - Pour créer ou modifier un programme ("ajoute du soulevé de terre au jour 2", "crée-moi un programme full body 3x/semaine", "renomme le jour 1") → save_program. Tu dois renvoyer le programme ENTIER (toutes les séances et exercices), pas seulement la partie modifiée : repars de l'état présent dans le contexte 'programs', applique le changement, et renvoie le tout. Fournis l'id existant pour modifier, omets-le pour créer.
 - Pour supprimer un programme entier → delete_program avec son id.
+- Pour noter ou planifier une SÉANCE un jour donné → log_session. UPSERT PAR JOUR : si une séance existe déjà ce jour-là pour la même séance de programme (programSessionId) ou le même titre, tes exercices sont fusionnés dedans (un exercice de même nom est remplacé, les autres ajoutés), sinon une nouvelle séance est créée. Pour rattacher à la séance planifiée du jour, fournis son programSessionId (depuis programs.sessions[].id, ou recent.sessions[].programSessionId). N'envoie que les exercices à ajouter/modifier.
+- STATUT (paramètre done) : par DÉFAUT done=false, l'exercice est ajouté EN À-FAIRE (non coché). Ne mets done=true QUE si l'utilisateur indique clairement avoir déjà réalisé l'exercice ("j'ai fait des dips", "séance finie", "réalisé 3x10"). Si l'utilisateur dit seulement "ajoute / mets / prévois tel exercice", laisse done=false : il pourra le cocher lui-même dans l'app.
 
 Annulation :
 - Si l'utilisateur dit "annule", "reviens en arrière", "non finalement", "oublie ce que tu viens de faire" juste après une de tes écritures → appelle undo_last. Cela restaure exactement l'état précédent. Une seule action peut être annulée (la dernière). Si l'utilisateur veut défaire quelque chose de plus ancien, utilise update_entry/delete_entry sur l'entrée précise.
@@ -93,6 +95,7 @@ export function buildContextPayload(ctx: CoachContext) {
         date: s.date,
         title: s.title,
         durationMin: s.durationMin,
+        ...(s.programSessionId ? { programSessionId: s.programSessionId } : {}),
         exercises: s.exercises.map((ex) => ({
           name: ex.name,
           sets: ex.sets.map((set) => ({ reps: set.reps, weight: set.weight, ...(set.rpe != null ? { rpe: set.rpe } : {}) }))

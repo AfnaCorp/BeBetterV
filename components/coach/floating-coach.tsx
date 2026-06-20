@@ -150,7 +150,7 @@ export function FloatingCoach() {
   const isMobile = typeof window !== "undefined" && window.innerWidth < 640;
 
   const panelLayout = (() => {
-    const style: React.CSSProperties = { position: "fixed", zIndex: 60 };
+    const style: React.CSSProperties = { position: "fixed", zIndex: 80 };
     let originX = "50%";
     let originY = "50%";
     if (isMobile) {
@@ -191,7 +191,7 @@ export function FloatingCoach() {
           {/* Backdrop only on mobile to make the popup feel modal */}
           {isMobile && (
             <div
-              className="fixed inset-0 z-50 bg-foreground/10 backdrop-blur-sm"
+              className="fixed inset-0 z-[75] bg-foreground/10 backdrop-blur-sm"
               onClick={() => setOpen(false)}
               aria-hidden
             />
@@ -279,7 +279,7 @@ export function FloatingCoach() {
             width: BUBBLE_SIZE,
             height: BUBBLE_SIZE,
             touchAction: "none",
-            zIndex: 70,
+            zIndex: 90,
             transition: dragging
               ? "none"
               : "left 260ms cubic-bezier(0.34, 1.4, 0.5, 1), top 200ms ease-out, transform 120ms ease"

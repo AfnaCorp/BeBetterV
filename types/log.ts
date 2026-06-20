@@ -36,7 +36,8 @@ export interface SessionExercise {
   name: string;
   /** Référence banque d'exercices (lib/exercise-bank), pour le suivi par muscle. */
   exerciseId?: string;
-  sets: { reps: number; weight: number; rpe?: number }[];
+  /** `done` : série cochée. Stocké pour reconstruire l'état exact d'un jour donné. */
+  sets: { reps: number; weight: number; rpe?: number; done?: boolean }[];
 }
 
 export interface SessionEntry extends BaseEntry {
@@ -45,6 +46,8 @@ export interface SessionEntry extends BaseEntry {
   exercises: SessionExercise[];
   notes?: string;
   programSessionId?: string;
+  /** Séance terminée : toutes les séries cochées (100 %). Persisté en Firestore. */
+  done?: boolean;
 }
 
 export interface HabitEntry extends BaseEntry {

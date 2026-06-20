@@ -39,6 +39,7 @@ interface AppDataContextValue {
   addSleep: (entry: Omit<SleepEntry, "id" | "createdAt">) => Promise<string>;
   addMeal: (entry: Omit<MealEntry, "id" | "createdAt">) => Promise<string>;
   addSession: (entry: Omit<SessionEntry, "id" | "createdAt">) => Promise<string>;
+  updateSession: (id: string, patch: Partial<Omit<SessionEntry, "id" | "createdAt">>) => Promise<void>;
   upsertDayLog: (entry: Omit<DayLog, "id" | "createdAt"> & { id?: string }) => Promise<string>;
   addHabit: (entry: Omit<HabitEntry, "id" | "createdAt">) => Promise<string>;
   updateHabit: (id: string, patch: Partial<HabitEntry>) => Promise<void>;
@@ -156,6 +157,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       addSleep: (entry) => createEntry(requireUid(), COLLECTIONS.sleep, entry),
       addMeal: (entry) => createEntry(requireUid(), COLLECTIONS.meals, entry),
       addSession: (entry) => createEntry(requireUid(), COLLECTIONS.sessions, entry),
+      updateSession: (id, patch) => updateEntry(requireUid(), COLLECTIONS.sessions, id, patch),
       upsertDayLog: async ({ id, ...entry }) => {
         const u = requireUid();
         // Un seul dayLog par jour : l'id du doc = la date `YYYY-MM-DD`.

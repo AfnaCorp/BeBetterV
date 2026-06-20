@@ -53,16 +53,26 @@ export const coachToolDeclarations: FunctionDeclaration[] = [
   {
     name: "log_session",
     description:
-      "Enregistre une séance d'entraînement. Inclus tous les exercices et séries mentionnés par l'utilisateur.",
+      "Enregistre ou complète une séance d'entraînement pour une date. UPSERT PAR JOUR : s'il existe déjà une séance ce jour pour la même séance de programme (programSessionId) ou le même titre, les exercices fournis sont FUSIONNÉS dans cette séance (mise à jour d'un exercice de même nom, ajout sinon) — pas de doublon. Pour 'ajoute tel exercice à ma séance d'aujourd'hui', envoie juste cet exercice avec la bonne date et le programSessionId de la séance du jour (présent dans recent.sessions / programs).",
     parameters: {
       type: SchemaType.OBJECT,
       properties: {
         date: { type: SchemaType.STRING, description: "Date ISO de la séance." },
         title: { type: SchemaType.STRING, description: "Titre court, ex: 'Pull', 'Jambes', 'Push lourd'." },
+        programSessionId: {
+          type: SchemaType.STRING,
+          description:
+            "Id de la séance de programme à compléter ce jour (depuis programs.sessions[].id ou recent.sessions[].programSessionId). À fournir pour rattacher/compléter la séance planifiée du jour plutôt qu'en créer une à part."
+        },
         durationMin: { type: SchemaType.NUMBER, description: "Durée en minutes, optionnel." },
+        done: {
+          type: SchemaType.BOOLEAN,
+          description:
+            "Les séries sont-elles DÉJÀ réalisées (cochées) ? true seulement si l'utilisateur indique avoir fait l'exercice ('j'ai fait', 'fini', 'réalisé'). false (DÉFAUT) si on planifie/ajoute un exercice à faire ('ajoute', 'mets', 'prévois') — il apparaît alors en à-faire, non coché."
+        },
         exercises: {
           type: SchemaType.ARRAY,
-          description: "Liste des exercices effectués.",
+          description: "Liste des exercices.",
           items: {
             type: SchemaType.OBJECT,
             properties: {

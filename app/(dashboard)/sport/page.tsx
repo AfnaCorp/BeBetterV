@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Dumbbell,
   Plus,
@@ -35,11 +35,11 @@ import { formatDayLabel, useSelectedDate } from "@/lib/utils/timeline";
 import type {
   ExerciseDef,
   MuscleGroup,
-  ProgramDraft,
   ProgramExercise,
   ProgramSession,
   ProgramTemplate,
   SessionEntry,
+  SessionExercise,
 } from "@/types";
 import {
   MUSCLE_GROUP_LABELS,
@@ -219,13 +219,10 @@ function plannedFor(program: ProgramTemplate, day: Date): ProgramSession | undef
 function TimelineView({
   program,
   renderPlanned,
-  onRedo,
 }: {
   program: ProgramTemplate;
-  /** Rendu du détail interactif pour une séance planifiée non encore réalisée. */
-  renderPlanned: (session: ProgramSession) => React.ReactNode;
-  /** Refaire une séance déjà réalisée (rouvre la saisie en overlay). */
-  onRedo: (session: SessionEntry) => void;
+  /** Rendu du détail interactif d'une séance pour le jour ISO donné. */
+  renderPlanned: (session: ProgramSession, day: string) => React.ReactNode;
 }) {
   const { sessions } = useAppData();
   const todayIso = isoDay(new Date());
@@ -247,8 +244,9 @@ function TimelineView({
   const doneSessions = doneByDay.get(selected) ?? [];
   const planned = plannedFor(program, selectedDate);
   const isFutureOrToday = selected >= todayIso;
-  // La séance planifiée est-elle déjà réalisée ce jour ?
-  const plannedDone = planned ? doneSessions.some((s) => s.programSessionId === planned.id) : false;
+  // Affiche la saisie inline pour la séance planifiée du jour (aujourd'hui/futur),
+  // qu'elle soit déjà réalisée ou non : une séance auto-validée reste en édition.
+  const showInline = Boolean(planned) && isFutureOrToday;
 
   return (
     <div className="space-y-5">
@@ -265,16 +263,21 @@ function TimelineView({
         </p>
 
         <div className="space-y-2">
-          {/* Séances réalisées ce jour */}
-          {doneSessions.map((s) => (
-            <DoneSessionCard key={s.id} session={s} onRedo={() => onRedo(s)} />
-          ))}
+          {/* Saisie inline de la séance planifiée du jour. On la garde affichée même
+              une fois réalisée (auto-validée à 100 %) : tout passe en vert, barre à
+              100 %, l'utilisateur reste sur sa séance sans bascule vers un récap. */}
+          {showInline && renderPlanned(planned!, selected)}
 
-          {/* Séance planifiée (aujourd'hui / futur, pas encore faite) : saisie inline directe */}
-          {planned && isFutureOrToday && !plannedDone && renderPlanned(planned)}
+          {/* Séances réalisées ce jour — sauf celle déjà ouverte en saisie inline,
+              qui s'affiche en mode édition (tout coché) plutôt qu'en carte récap. */}
+          {doneSessions
+            .filter((s) => !(planned && s.programSessionId === planned.id))
+            .map((s) => (
+              <DoneSessionCard key={s.id} session={s} />
+            ))}
 
           {/* État vide : rien fait, rien (ou repos) planifié */}
-          {doneSessions.length === 0 && !(planned && isFutureOrToday && !plannedDone) && (
+          {doneSessions.length === 0 && !showInline && (
             <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
               <Moon className="h-4 w-4 shrink-0" />
               <span>
@@ -288,8 +291,8 @@ function TimelineView({
   );
 }
 
-/** Carte d'une séance réalisée : titre, exos, séries, bouton refaire. */
-function DoneSessionCard({ session, onRedo }: { session: SessionEntry; onRedo: () => void }) {
+/** Carte d'une séance réalisée : titre, exos, séries. */
+function DoneSessionCard({ session }: { session: SessionEntry }) {
   const totalSets = session.exercises.reduce((acc, ex) => acc + ex.sets.length, 0);
   return (
     <Card className="neu-surface-sm border-none shadow-none">
@@ -299,12 +302,6 @@ function DoneSessionCard({ session, onRedo }: { session: SessionEntry; onRedo: (
             <Check className="h-3 w-3" />
           </span>
           <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">{session.title}</span>
-          <button
-            onClick={onRedo}
-            className="flex shrink-0 items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-[11px] font-semibold text-muted-foreground transition hover:text-foreground"
-          >
-            <Dumbbell className="h-3 w-3" /> Refaire
-          </button>
         </div>
         <div className="space-y-1.5 pl-7">
           {session.exercises.map((ex, i) => (
@@ -1038,19 +1035,25 @@ type LastByExercise = Map<string, { reps: number; weight: number }[]>;
 function LogView({
   session,
   programName,
+  day,
   initial,
+  remoteExercises,
   lastByExercise,
   library,
   lookupLast,
   inline = false,
-  onChange,
-  onFinish,
+  onPersist,
   onCancel,
 }: {
   session: ProgramSession;
   programName: string;
-  /** État de départ : reprise d'un brouillon ou pré-rempli (dernière séance / programme). */
+  /** Jour ISO (YYYY-MM-DD) que cette saisie alimente — tracking jour par jour. */
+  day: string;
+  /** État de départ : reconstruit depuis la séance du jour, sinon pré-rempli. */
   initial: LiveExercise[];
+  /** Exercices de la séance du jour en base (temps réel) : sert à intégrer les ajouts
+      externes (ex. le coach) sans écraser la saisie locale en cours. */
+  remoteExercises?: SessionExercise[];
   lastByExercise: LastByExercise;
   /** Noms d'exercices déjà réalisés (toutes séances confondues), pour suggestion. */
   library: string[];
@@ -1058,8 +1061,8 @@ function LogView({
   lookupLast: (name: string) => { reps: number; weight: number }[] | undefined;
   /** Affichage inline (dans le flux de la page) plutôt qu'en overlay plein écran. */
   inline?: boolean;
-  onChange: (exercises: LiveExercise[]) => void;
-  onFinish: (entry: Omit<SessionEntry, "id" | "createdAt">) => void;
+  /** Upsert live de la séance du jour (débouncé). Stocke toutes les séries + leur `done`. */
+  onPersist: (entry: Omit<SessionEntry, "id" | "createdAt">) => void;
   onCancel: () => void;
 }) {
   const [exercises, setExercises] = useState<LiveExercise[]>(initial);
@@ -1080,9 +1083,57 @@ function LogView({
     });
   }
 
-  // Sauvegarde auto : remonte chaque modification au parent (débouncée).
+  // Intègre en temps réel les exercices ajoutés DEPUIS L'EXTÉRIEUR (ex. le coach via
+  // log_session) à la séance du jour, sans toucher à ce qu'on est en train de saisir :
+  // on n'ajoute que les exercices distants dont le nom est absent localement.
+  const remoteNames = (remoteExercises ?? []).map((ex) => ex.name.toLowerCase()).join("|");
   useEffect(() => {
-    const t = setTimeout(() => onChange(exercises), 400);
+    if (!remoteExercises) return;
+    setExercises((prev) => {
+      const known = new Set(prev.map((e) => e.name.toLowerCase()));
+      const additions = remoteExercises
+        .filter((ex) => !known.has(ex.name.toLowerCase()))
+        .map((ex) => ({
+          name: ex.name,
+          exerciseId: ex.exerciseId,
+          sets: ex.sets.map((s) => ({
+            reps: s.reps,
+            weight: s.weight,
+            rpe: s.rpe ?? 0,
+            done: s.done ?? true,
+            touched: true,
+          })),
+        }));
+      return additions.length ? [...prev, ...additions] : prev;
+    });
+  }, [remoteNames]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Construit la SessionEntry du jour à partir de l'état live. On stocke TOUTES les
+  // séries avec leur `done` (et les valeurs même non cochées) pour pouvoir reconstruire
+  // exactement l'état de ce jour ; `done` global = toutes les séries cochées.
+  function toEntry(): Omit<SessionEntry, "id" | "createdAt"> {
+    const totalSets = exercises.reduce((acc, ex) => acc + ex.sets.length, 0);
+    const allDone = totalSets > 0 && exercises.every((ex) => ex.sets.every((s) => s.done));
+    return {
+      date: day,
+      title: `${session.title} — ${programName}`,
+      source: "manual",
+      programSessionId: session.id,
+      done: allDone,
+      exercises: exercises.map((ex) => ({
+        name: ex.name,
+        ...(ex.exerciseId ? { exerciseId: ex.exerciseId } : {}),
+        sets: ex.sets.map((s) => ({ reps: s.reps, weight: s.weight, rpe: s.rpe, done: s.done })),
+      })),
+    };
+  }
+
+  // Persistance live (débouncée) de la séance du jour, sur modification utilisateur
+  // uniquement : tant que `exercises` pointe sur `initial` (aucune action), on n'écrit
+  // rien — évite de créer une entrée vide au simple affichage d'un jour.
+  useEffect(() => {
+    if (exercises === initial) return;
+    const t = setTimeout(() => onPersist(toEntry()), 400);
     return () => clearTimeout(t);
   }, [exercises]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1158,24 +1209,11 @@ function LogView({
     setAdding(false);
   }
 
-  function finish() {
-    const today = isoDay(new Date());
-    onFinish({
-      date: today,
-      title: `${session.title} — ${programName}`,
-      source: "manual",
-      programSessionId: session.id,
-      exercises: exercises.map((ex) => ({
-        name: ex.name,
-        ...(ex.exerciseId ? { exerciseId: ex.exerciseId } : {}),
-        sets: ex.sets.filter((s) => s.done).map((s) => ({ reps: s.reps, weight: s.weight, rpe: s.rpe })),
-      })),
-    });
-  }
-
   const totalDone = exercises.reduce((acc, ex) => acc + ex.sets.filter((s) => s.done).length, 0);
   const totalSets = exercises.reduce((acc, ex) => acc + ex.sets.length, 0);
   const pct = totalSets ? Math.round((totalDone / totalSets) * 100) : 0;
+  const complete = totalSets > 0 && totalDone === totalSets;
+
 
   return (
     <div className={inline ? "space-y-3" : "fixed inset-0 z-[80] flex flex-col bg-background"}>
@@ -1195,30 +1233,25 @@ function LogView({
           )}
           <div className="min-w-0 flex-1">
             <h2 className="truncate font-semibold text-foreground">{session.title}</h2>
-            <p className="text-xs text-muted-foreground">
-              {programName} · {totalDone}/{totalSets} séries
-            </p>
           </div>
-          <span className="text-sm font-bold gradient-accent-text">{pct}%</span>
+          <span className={`text-sm font-bold ${complete ? "text-green-600" : "gradient-accent-text"}`}>{pct}%</span>
         </div>
         <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
           <div
-            className="h-full rounded-full bg-accent-gradient transition-all duration-300"
-            style={{ width: `${pct}%` }}
+            className={`h-full rounded-full transition-all duration-300 ${complete ? "" : "bg-accent-gradient"}`}
+            style={{
+              width: `${pct}%`,
+              // À 100 % : dégradé vert (sinon le dégradé d'accent orange→violet).
+              ...(complete
+                ? { backgroundImage: "linear-gradient(135deg, #34d399 0%, #16a34a 100%)" }
+                : {}),
+            }}
           />
         </div>
       </header>
 
       {/* Liste des exercices */}
       <div className={inline ? "space-y-3" : "flex-1 space-y-3 overflow-y-auto px-3 py-4 pb-32"}>
-        {/* Ajouter un exercice à la séance en cours */}
-        <button
-          onClick={() => setAdding(true)}
-          className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-muted px-4 py-3 text-sm font-medium text-muted-foreground transition hover:border-primary hover:text-foreground"
-        >
-          <Plus className="h-4 w-4" /> Ajouter un exercice
-        </button>
-
         {exercises.map((ex, exIdx) => {
           const exDone = ex.sets.filter((s) => s.done).length;
           const lastSets = lastByExercise.get(ex.name);
@@ -1323,6 +1356,14 @@ function LogView({
             </div>
           );
         })}
+
+        {/* Ajouter un exercice à la séance en cours */}
+        <button
+          onClick={() => setAdding(true)}
+          className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-muted px-4 py-3 text-sm font-medium text-muted-foreground transition hover:border-primary hover:text-foreground"
+        >
+          <Plus className="h-4 w-4" /> Ajouter un exercice
+        </button>
       </div>
 
       {adding && (
@@ -1372,18 +1413,6 @@ function LogView({
         </div>
       )}
 
-      {/* CTA Terminer — dans le flux en inline, fixe en bas en overlay */}
-      <div
-        className={
-          inline
-            ? "pt-1"
-            : "absolute inset-x-0 bottom-0 border-t border-border/50 bg-card/95 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur"
-        }
-      >
-        <Button onClick={finish} className="w-full" size="lg" disabled={totalDone === 0}>
-          <Check className="mr-2 h-5 w-5" /> Terminer la séance ({totalDone}/{totalSets})
-        </Button>
-      </div>
     </div>
   );
 }
@@ -1421,17 +1450,27 @@ function buildExerciseIndex(sessions: SessionEntry[]): LastByExercise {
   return map;
 }
 
-/** État de départ d'une séance : reprise du brouillon, sinon dernière séance, sinon programme. */
+/**
+ * État de départ d'une séance pour un jour donné. Si une SessionEntry existe déjà
+ * pour ce jour (tracking jour par jour), on reconstruit exactement son état (séries,
+ * poids/reps, `done`). Sinon on pré-remplit depuis la dernière séance / le programme.
+ */
 function buildInitial(
   session: ProgramSession,
-  draft: ProgramDraft | undefined,
+  dayEntry: SessionEntry | undefined,
   lastByExercise: LastByExercise
 ): LiveExercise[] {
-  if (draft && draft.programSessionId === session.id) {
-    return draft.exercises.map((ex) => ({
+  if (dayEntry) {
+    return dayEntry.exercises.map((ex) => ({
       name: ex.name,
       exerciseId: ex.exerciseId,
-      sets: ex.sets.map((s) => ({ ...s })),
+      sets: ex.sets.map((s) => ({
+        reps: s.reps,
+        weight: s.weight,
+        rpe: s.rpe ?? 0,
+        done: s.done ?? true, // entrées historiques sans `done` = série réalisée.
+        touched: true,
+      })),
     }));
   }
   return session.exercises.map((ex) => {
@@ -1454,25 +1493,16 @@ function buildInitial(
   });
 }
 
-/** Construit une séance "refaire" depuis une séance réalisée (mêmes exos/cibles). */
-function redoSessionFromEntry(entry: SessionEntry): ProgramSession {
-  return {
-    id: entry.programSessionId ?? entry.id,
-    title: entry.title,
-    exercises: entry.exercises.map((ex) => ({
-      name: ex.name,
-      exerciseId: ex.exerciseId,
-      targetSets: ex.sets.length || 1,
-      targetReps: ex.sets[0]?.reps ?? 8,
-      targetWeight: ex.sets[0]?.weight,
-    })),
-  };
-}
-
 export default function SportPage() {
-  const { addSession, addProgram, updateProgram, clearProgramDraft, programs, sessions, ready } = useAppData();
+  const { addSession, updateSession, addProgram, updateProgram, programs, sessions, ready } = useAppData();
   const [active, setActive] = useState<{ programId: string; session: ProgramSession; programName: string } | null>(null);
   const [editing, setEditing] = useState<{ id: string | null; initial: Omit<ProgramTemplate, "id" | "createdAt"> } | null>(null);
+  // Id Firestore de la SessionEntry par clé `jour|programSessionId`. Évite de créer
+  // plusieurs entrées pour un même jour pendant que `sessions` (temps réel) se met à
+  // jour après une création — tracking jour par jour sans doublon.
+  const dayEntryIds = useRef<Map<string, string>>(new Map());
+  // Sérialise les upserts pour éviter une course création/mise à jour sur le même jour.
+  const persistChain = useRef<Promise<unknown>>(Promise.resolve());
 
   useEffect(() => {
     if (ready && programs.length === 0) {
@@ -1484,26 +1514,31 @@ export default function SportPage() {
     setActive({ programId: program.id, session, programName: program.name });
   }
 
-  // Termine une séance pour un programme donné (inline ou overlay).
-  async function finishSession(programId: string, entry: Omit<SessionEntry, "id" | "createdAt">) {
-    await addSession(entry);
-    await clearProgramDraft(programId); // séance terminée → on efface le brouillon
-    setActive(null);
+  // Upsert live de la séance d'un jour (tracking jour par jour). Crée l'entrée la
+  // première fois, met à jour la même ensuite — repéré par `jour|programSessionId`,
+  // d'abord via le cache d'ids, sinon via les séances déjà en base. Sérialisé.
+  function persistDay(entry: Omit<SessionEntry, "id" | "createdAt">) {
+    const key = `${entry.date.slice(0, 10)}|${entry.programSessionId ?? ""}`;
+    persistChain.current = persistChain.current.then(async () => {
+      const cached = dayEntryIds.current.get(key);
+      const existing =
+        cached ??
+        sessions.find(
+          (s) => s.date.slice(0, 10) === entry.date.slice(0, 10) && s.programSessionId === entry.programSessionId
+        )?.id;
+      if (existing) {
+        dayEntryIds.current.set(key, existing);
+        await updateSession(existing, entry);
+      } else {
+        const id = await addSession(entry);
+        dayEntryIds.current.set(key, id);
+      }
+    });
+    void persistChain.current;
   }
 
   async function handleCancelLog() {
-    setActive(null); // on quitte sans terminer : le brouillon reste pour reprise
-  }
-
-  // Auto-save du brouillon pour un programme/séance donné.
-  function saveDraft(programId: string, session: ProgramSession, exercises: LiveExercise[]) {
-    const draft: ProgramDraft = {
-      programSessionId: session.id,
-      title: session.title,
-      exercises,
-      updatedAt: new Date().toISOString(),
-    };
-    void updateProgram(programId, { draft });
+    setActive(null);
   }
 
   async function handleSaveProgram(draft: Omit<ProgramTemplate, "id" | "createdAt">) {
@@ -1519,31 +1554,37 @@ export default function SportPage() {
   const exerciseIndex = buildExerciseIndex(sessions);
   const library = [...exerciseIndex.keys()].sort((a, b) => a.localeCompare(b, "fr"));
 
-  /** Rend une séance interactive (overlay ou inline) pour un programme donné. */
-  function renderSession(program: ProgramTemplate, session: ProgramSession, inline: boolean) {
+  /** Rend une séance interactive (overlay ou inline) pour un jour donné. */
+  function renderSession(program: ProgramTemplate, session: ProgramSession, inline: boolean, day: string) {
     const lastByExercise = lastSessionFor(sessions, session.id);
-    const initial = buildInitial(session, program.draft, lastByExercise);
+    // Séance déjà enregistrée pour CE jour précis (tracking jour par jour) : on
+    // reconstruit son état exact ; sinon on pré-remplit depuis l'historique/le programme.
+    const dayEntry = sessions.find(
+      (s) => s.date.slice(0, 10) === day && s.programSessionId === session.id
+    );
+    const initial = buildInitial(session, dayEntry, lastByExercise);
     return (
       <LogView
-        key={session.id}
+        key={`${session.id}|${day}`}
         session={session}
         programName={program.name}
+        day={day}
         initial={initial}
+        remoteExercises={dayEntry?.exercises}
         lastByExercise={lastByExercise}
         library={library}
         lookupLast={(name) => exerciseIndex.get(name)}
         inline={inline}
-        onChange={(exercises) => saveDraft(program.id, session, exercises)}
-        onFinish={(entry) => finishSession(program.id, entry)}
+        onPersist={persistDay}
         onCancel={handleCancelLog}
       />
     );
   }
 
-  // Overlay log (refaire une séance passée / démarrer depuis un autre programme).
+  // Overlay log (démarrer une séance depuis un autre programme).
   if (active) {
     const activeProgram = programs.find((p) => p.id === active.programId);
-    if (activeProgram) return renderSession(activeProgram, active.session, false);
+    if (activeProgram) return renderSession(activeProgram, active.session, false, isoDay(new Date()));
   }
 
   // Éditeur
@@ -1591,8 +1632,7 @@ export default function SportPage() {
       ) : (
         <TimelineView
           program={program}
-          renderPlanned={(session) => renderSession(program, session, true)}
-          onRedo={(entry) => handleStartSession(redoSessionFromEntry(entry), program)}
+          renderPlanned={(session, day) => renderSession(program, session, true, day)}
         />
       )}
     </div>

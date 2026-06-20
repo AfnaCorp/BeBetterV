@@ -99,24 +99,97 @@ async function logMeal(ctx: ExecCtx, args: ToolArgs): Promise<WriteRecord> {
   return { kind: "meal", summary: `Repas noté : ${description}`, ref: ref.id };
 }
 
+/**
+ * Normalise un exercice du tool. `done` = statut des séries : true si l'utilisateur a
+ * indiqué les avoir réalisées, false (défaut) si on planifie un exercice à faire (todo).
+ */
+function normalizeExercise(raw: unknown, done: boolean) {
+  const ex = (raw ?? {}) as Record<string, unknown>;
+  const sets = Array.isArray(ex.sets) ? ex.sets : [];
+  return {
+    name: String(ex.name ?? "").trim(),
+    ...(ex.exerciseId ? { exerciseId: String(ex.exerciseId) } : {}),
+    sets: sets.map((s) => {
+      const set = (s ?? {}) as Record<string, unknown>;
+      return {
+        reps: Number(set.reps ?? 0),
+        weight: Number(set.weight ?? 0),
+        ...(set.rpe != null ? { rpe: Number(set.rpe) } : {}),
+        done
+      };
+    })
+  };
+}
+
+type StoredExercise = ReturnType<typeof normalizeExercise>;
+
+/** Fusionne les exercices fournis dans la séance existante : remplace ceux de même nom, ajoute les autres. */
+function mergeExercises(existing: StoredExercise[], incoming: StoredExercise[]): StoredExercise[] {
+  const merged = existing.map((e) => ({ ...e }));
+  for (const ex of incoming) {
+    const idx = merged.findIndex((e) => e.name.toLowerCase() === ex.name.toLowerCase());
+    if (idx >= 0) merged[idx] = ex;
+    else merged.push(ex);
+  }
+  return merged;
+}
+
 async function logSession(ctx: ExecCtx, args: ToolArgs): Promise<WriteRecord> {
   const date = normalizeDate(ctx, args.date);
   const title = String(args.title ?? "Séance").trim();
-  const exercises = Array.isArray(args.exercises) ? args.exercises : [];
+  const programSessionId = args.programSessionId != null ? String(args.programSessionId) : undefined;
+  // Statut par défaut : à faire (false). Validé seulement si explicitement indiqué.
+  const setsDone = args.done === true;
+  const incoming = (Array.isArray(args.exercises) ? args.exercises : []).map((ex) =>
+    normalizeExercise(ex, setsDone)
+  );
+
+  // Upsert par jour : on cherche une séance existante ce jour, ciblée par
+  // programSessionId si fourni, sinon par titre identique. Si trouvée → fusion.
+  const dayQuery = await userCol(ctx.uid, "sessions").where("date", "==", date).get();
+  const existingDoc = dayQuery.docs.find((d) => {
+    const data = d.data() as Record<string, unknown>;
+    if (programSessionId) return data.programSessionId === programSessionId;
+    return String(data.title ?? "").trim().toLowerCase() === title.toLowerCase();
+  });
+
+  if (existingDoc) {
+    const data = existingDoc.data() as Record<string, unknown>;
+    const prevExercises = (Array.isArray(data.exercises) ? data.exercises : []) as StoredExercise[];
+    const exercises = mergeExercises(prevExercises, incoming);
+    const allDone = exercises.length > 0 && exercises.every((e) => e.sets.every((s) => s.done));
+    const before = await snapshotBefore(ctx.uid, "sessions", existingDoc.id);
+    await userCol(ctx.uid, "sessions").doc(existingDoc.id).update({
+      exercises,
+      done: allDone,
+      ...(args.durationMin != null ? { durationMin: Number(args.durationMin) } : {}),
+      ...(args.notes ? { notes: String(args.notes) } : {})
+    });
+    ctx.undo = { type: "restore", collection: "sessions", id: existingDoc.id, before, label: `séance ${title}` };
+    return {
+      kind: "session",
+      summary: `Séance ${title} mise à jour (${exercises.length} exercice${exercises.length > 1 ? "s" : ""}) le ${date}`,
+      ref: existingDoc.id
+    };
+  }
+
+  const allDone = incoming.length > 0 && incoming.every((e) => e.sets.every((s) => s.done));
   const ref = await userCol(ctx.uid, "sessions").add({
     date,
     title,
-    exercises,
+    exercises: incoming,
+    done: allDone,
+    ...(programSessionId ? { programSessionId } : {}),
     ...(args.durationMin != null ? { durationMin: Number(args.durationMin) } : {}),
     ...(args.notes ? { notes: String(args.notes) } : {}),
     source: "coach",
     createdAt: FieldValue.serverTimestamp()
   });
-  const exCount = exercises.length;
   ctx.undo = { type: "delete", collection: "sessions", id: ref.id, label: `séance ${title}` };
+  const verb = setsDone ? "notée" : "planifiée";
   return {
     kind: "session",
-    summary: `Séance ${title} notée (${exCount} exercice${exCount > 1 ? "s" : ""}) le ${date}`,
+    summary: `Séance ${title} ${verb} (${incoming.length} exercice${incoming.length > 1 ? "s" : ""}) le ${date}`,
     ref: ref.id
   };
 }
