@@ -8,6 +8,7 @@ import { PageTransition } from "./page-transition";
 import { SettingsMenu } from "./settings-menu";
 import { FloatingCoach } from "@/components/coach/floating-coach";
 import { CoachSetupModal } from "@/components/coach/coach-setup-modal";
+import { InstallPrompt } from "@/components/pwa/install-prompt";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
@@ -36,6 +37,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <MobileNav />
       <FloatingCoach />
       <CoachSetupModal />
+      <InstallPrompt />
     </div>
   );
 }

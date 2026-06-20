@@ -6,6 +6,15 @@ node_modules/
 out/
 *.tsbuildinfo
 
+# PWA (service worker généré par next-pwa au build — régénéré, ne pas commit)
+public/sw.js
+public/sw.js.map
+public/workbox-*.js
+public/workbox-*.js.map
+public/swe-worker-*.js
+public/swe-worker-*.js.map
+public/fallback-*.js
+
 # Firebase App Hosting adapter output
 .apphosting/
 next.config.original.mjs
