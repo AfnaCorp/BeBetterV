@@ -1,5 +1,20 @@
+// IMPORTANT : import à effet de bord en tout premier. Node ≥ 22 (ici v25) expose
+// un global `localStorage` expérimental incomplet ; sa présence côté serveur fait
+// croire à Firebase Auth qu'il tourne dans un navigateur et le pousse à appeler
+// `localStorage.getItem` (pas une vraie fonction) → crash SSR. On neutralise ce
+// faux global AVANT de charger Firebase (les imports ESM sont hoistés, donc ce
+// module-ci doit rester en première position).
+import "./strip-node-localstorage";
+
 import { getApps, initializeApp, type FirebaseApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider, type Auth } from "firebase/auth";
+import {
+  browserLocalPersistence,
+  getAuth,
+  inMemoryPersistence,
+  initializeAuth,
+  GoogleAuthProvider,
+  type Auth
+} from "firebase/auth";
 import { getFirestore, initializeFirestore, type Firestore } from "firebase/firestore";
 
 const firebaseConfig = {
@@ -13,7 +28,21 @@ const firebaseConfig = {
 
 const existingApp = getApps()[0];
 export const firebaseApp: FirebaseApp = existingApp ?? initializeApp(firebaseConfig);
-export const firebaseAuth: Auth = getAuth(firebaseApp);
+
+// `getAuth()` câble par défaut la persistance navigateur (localStorage/indexedDB),
+// ce qui plante côté serveur où `localStorage` n'existe pas (les Client Components
+// sont quand même rendus en SSR). On initialise donc l'auth avec une persistance
+// explicite uniquement dans le navigateur ; côté serveur on prend l'instance nue.
+function createAuth(): Auth {
+  // App déjà initialisée (HMR Next) : on réutilise l'instance d'auth existante.
+  if (existingApp) return getAuth(firebaseApp);
+  // Côté serveur, aucune persistance navigateur disponible → mémoire seule.
+  const persistence =
+    typeof window === "undefined" ? inMemoryPersistence : browserLocalPersistence;
+  return initializeAuth(firebaseApp, { persistence });
+}
+
+export const firebaseAuth: Auth = createAuth();
 // `ignoreUndefinedProperties` : Firestore rejette les valeurs `undefined` par défaut,
 // ce qui fait planter silencieusement les écritures partielles (ex. premier dayLog du jour).
 // `initializeFirestore` ne peut être appelé qu'une fois par app : si l'app était déjà
