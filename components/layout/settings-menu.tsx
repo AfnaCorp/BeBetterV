@@ -122,16 +122,16 @@ export function SettingsMenu() {
       </div>
 
       {editing && (
-        <div className="fixed inset-0 z-[80] grid place-items-center p-4">
+        <div className="fixed inset-0 z-[80] flex min-h-dvh items-center justify-center p-4">
           <div
-            className="absolute inset-0 bg-foreground/20 backdrop-blur-sm"
+            className="absolute inset-0 bg-foreground/25 backdrop-blur-md"
             onClick={() => setEditing(false)}
             aria-hidden
           />
           <div
             role="dialog"
             aria-label="Personnaliser le coach"
-            className="neu-surface relative w-full max-w-sm rounded-3xl p-6 shadow-2xl"
+            className="neu-surface relative w-full max-w-sm rounded-3xl border border-border p-6 shadow-2xl"
           >
             <h2 className="mb-4 text-center text-lg font-semibold text-foreground">
               Personnalise ton coach

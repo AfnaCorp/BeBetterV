@@ -15,7 +15,10 @@ export function MobileNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="neu-surface fixed inset-x-3 bottom-3 z-50 grid grid-cols-3 gap-1.5 p-2 lg:hidden">
+    <nav
+      className="neu-surface fixed inset-x-3 bottom-3 z-50 grid grid-cols-3 gap-1.5 p-2 lg:hidden"
+      style={{ boxShadow: "0 6px 14px -5px rgba(0,0,0,0.26), 0 18px 34px -18px rgba(0,0,0,0.30)" }}
+    >
       {items.map((item) => {
         const Icon = item.icon;
         const active = pathname.startsWith(item.href);

@@ -23,6 +23,8 @@ export function DateStrip({
 }) {
   const timeline = days ? buildTimeline(days) : buildTimeline();
   const todayIso = toISODate(new Date());
+  const selectedDate = new Date(`${selected}T00:00:00`);
+  const monthLabel = selectedDate.toLocaleDateString("fr-FR", { month: "long" });
   const stripRef = useRef<HTMLDivElement>(null);
   const selectedRef = useRef<HTMLButtonElement>(null);
   const todayRef = useRef<HTMLButtonElement>(null);
@@ -38,11 +40,14 @@ export function DateStrip({
 
   return (
     <div className="-mx-4 sm:-mx-5">
+      <p className="px-4 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground sm:px-5">
+        {monthLabel}
+      </p>
       <div
         ref={stripRef}
         role="tablist"
         aria-label="Choisir une date"
-        className="flex snap-x snap-mandatory gap-2 overflow-x-auto px-4 pb-1 pt-1 sm:px-5 [&::-webkit-scrollbar]:hidden"
+        className="flex snap-x snap-mandatory gap-2 overflow-x-auto px-4 pb-2 pt-2 sm:px-5 [&::-webkit-scrollbar]:hidden"
         style={{ scrollbarWidth: "none" }}
       >
         {timeline.map((day) => {
@@ -59,9 +64,14 @@ export function DateStrip({
               onClick={() => onSelect(iso)}
               className={`flex w-12 shrink-0 snap-center flex-col items-center gap-1 rounded-2xl px-1 py-2 transition ${
                 isSelected
-                  ? "gradient-accent text-white shadow-md"
+                  ? "gradient-accent text-white"
                   : "neu-surface-sm text-muted-foreground hover:text-foreground"
               }`}
+              style={{
+                boxShadow: isSelected
+                  ? "0 6px 14px -5px rgba(0,0,0,0.30), 0 16px 28px -12px rgba(198,74,214,0.42)"
+                  : undefined,
+              }}
             >
               <span className={`text-[10px] uppercase tracking-wide ${isSelected ? "text-white/80" : ""}`}>
                 {SHORT_DAYS[day.getDay()]}

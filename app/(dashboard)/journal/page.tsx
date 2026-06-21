@@ -21,11 +21,18 @@ import { CoachWriteBanner } from "@/components/coach/coach-write-banner";
 import { DateStrip } from "@/components/ui/date-strip";
 import { Textarea } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
-import { formatDayLabel, useSelectedDate } from "@/lib/utils/timeline";
+import { toISODate } from "@/lib/utils/dates";
+import { useSelectedDate } from "@/lib/utils/timeline";
 import type { DayLog, MealEntry, SleepEntry, WeightEntry } from "@/types";
 
 function dayKey(iso: string) {
   return iso.slice(0, 10);
+}
+
+function previousDay(iso: string) {
+  const date = new Date(`${iso}T00:00:00`);
+  date.setDate(date.getDate() - 1);
+  return toISODate(date);
 }
 
 interface DayBucket {
@@ -154,16 +161,16 @@ function NumberPill({
   const dec = () => onChange(Math.max(min, Math.round((current - step) * 100) / 100));
   const inc = () => onChange(Math.round((current + step) * 100) / 100);
   return (
-    <div className="flex shrink-0 items-center gap-0.5 rounded-xl neu-inset px-1 py-1">
+    <div className="grid w-28 shrink-0 grid-cols-[1.75rem_minmax(0,1fr)_1.75rem] items-center rounded-full bg-muted/70 px-0.5 py-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.75),inset_0_-8px_18px_rgba(89,96,130,0.08)] ring-1 ring-white/70">
       <button
         type="button"
         onClick={dec}
-        className="grid h-7 w-7 place-items-center rounded-lg text-muted-foreground active:bg-muted"
+        className="grid h-8 w-7 place-items-center rounded-full text-muted-foreground active:bg-muted"
         aria-label={`Diminuer (${unit})`}
       >
         <Minus className="h-3.5 w-3.5" />
       </button>
-      <span className="flex items-baseline gap-0.5">
+      <span className="flex min-w-0 items-baseline justify-center gap-0.5">
         <input
           type="number"
           inputMode="decimal"
@@ -172,19 +179,43 @@ function NumberPill({
           value={value ?? ""}
           placeholder={placeholder}
           onChange={(e) => onChange(e.target.value === "" ? min : Number(e.target.value))}
-          className="w-12 bg-transparent text-center text-base font-bold text-foreground outline-none [appearance:textfield] placeholder:text-muted-foreground/50 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+          className="w-9 bg-transparent text-center text-base font-bold text-foreground outline-none [appearance:textfield] placeholder:text-muted-foreground/50 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
         />
-        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{unit}</span>
+        <span className="text-[8px] uppercase tracking-wide text-muted-foreground">{unit}</span>
       </span>
       <button
         type="button"
         onClick={inc}
-        className="grid h-7 w-7 place-items-center rounded-lg text-muted-foreground active:bg-muted"
+        className="grid h-8 w-7 place-items-center rounded-full text-muted-foreground active:bg-muted"
         aria-label={`Augmenter (${unit})`}
       >
         <Plus className="h-3.5 w-3.5" />
       </button>
     </div>
+  );
+}
+
+function AddMeasureButton({
+  onClick,
+  loading,
+}: {
+  onClick: () => void;
+  loading?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={loading}
+      className="grid w-28 shrink-0 grid-cols-[1.75rem_minmax(0,1fr)] items-center rounded-full bg-muted/70 px-1 py-1 text-muted-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.75),inset_0_-8px_18px_rgba(89,96,130,0.08)] ring-1 ring-white/70 transition hover:text-foreground active:scale-[0.98] disabled:opacity-60"
+    >
+      <span className="grid h-7 w-7 place-items-center rounded-full bg-card/70 ring-1 ring-white/70">
+        <Plus className="h-3.5 w-3.5" />
+      </span>
+      <span className="pr-2 text-center text-xs font-bold uppercase tracking-wide">
+        {loading ? "Ajout..." : "Ajouter"}
+      </span>
+    </button>
   );
 }
 
@@ -503,6 +534,10 @@ export default function JournalPage() {
   } = useAppData();
   const [selected, setSelected] = useSelectedDate();
   const [proteinOpen, setProteinOpen] = useState(false);
+  const [addingWeight, setAddingWeight] = useState(false);
+  const [addingSleep, setAddingSleep] = useState(false);
+  const [optimisticWeight, setOptimisticWeight] = useState<WeightEntry | null>(null);
+  const [optimisticSleep, setOptimisticSleep] = useState<SleepEntry | null>(null);
   const toast = useToast();
 
   // Toutes les données indexées par jour ISO.
@@ -534,6 +569,32 @@ export default function JournalPage() {
 
   const bucket = buckets.get(selected);
   const log = bucket?.log;
+  const previousBucket = buckets.get(previousDay(selected));
+  const weight = bucket?.weight ?? (optimisticWeight?.date === selected ? optimisticWeight : undefined);
+  const sleepEntry = bucket?.sleep ?? (optimisticSleep?.date === selected ? optimisticSleep : undefined);
+  const defaultWeightKg = previousBucket?.weight?.kg ?? 75;
+  const defaultSleepHours = profile?.sleepTargetH ?? previousBucket?.sleep?.hours ?? 8;
+
+  useEffect(() => {
+    setAddingWeight(false);
+    setAddingSleep(false);
+    setOptimisticWeight(null);
+    setOptimisticSleep(null);
+  }, [selected]);
+
+  useEffect(() => {
+    if (bucket?.weight && optimisticWeight?.date === selected) {
+      setOptimisticWeight(null);
+      setAddingWeight(false);
+    }
+  }, [bucket?.weight, optimisticWeight?.date, selected]);
+
+  useEffect(() => {
+    if (bucket?.sleep && optimisticSleep?.date === selected) {
+      setOptimisticSleep(null);
+      setAddingSleep(false);
+    }
+  }, [bucket?.sleep, optimisticSleep?.date, selected]);
 
   // Sources de protéines du jour, unifiées : apports directs (proteinEntries,
   // supprimables) + repas du jour ayant un proteinG estimé (lecture seule). Le total
@@ -638,18 +699,48 @@ export default function JournalPage() {
   const setWeight = async (kg: number) => {
     try {
       if (bucket?.weight) await updateWeight(bucket.weight.id, { kg });
-      else await addWeight({ date: selected, kg, source: "manual" });
+      else if (optimisticWeight?.date === selected) {
+        setOptimisticWeight((current) => current && current.date === selected ? { ...current, kg } : current);
+        await updateWeight(optimisticWeight.id, { kg });
+      } else {
+        const id = await addWeight({ date: selected, kg, source: "manual" });
+        setOptimisticWeight({ id, date: selected, kg, source: "manual", createdAt: new Date().toISOString() });
+      }
+      return true;
     } catch {
       toast("Échec de l'enregistrement. Réessaie.", "error");
+      return false;
     }
   };
   const setSleepHours = async (hours: number) => {
     try {
       if (bucket?.sleep) await updateSleep(bucket.sleep.id, { hours });
-      else await addSleep({ date: selected, hours, source: "manual" });
+      else if (optimisticSleep?.date === selected) {
+        setOptimisticSleep((current) => current && current.date === selected ? { ...current, hours } : current);
+        await updateSleep(optimisticSleep.id, { hours });
+      } else {
+        const id = await addSleep({ date: selected, hours, source: "manual" });
+        setOptimisticSleep({ id, date: selected, hours, source: "manual", createdAt: new Date().toISOString() });
+      }
+      return true;
     } catch {
       toast("Échec de l'enregistrement. Réessaie.", "error");
+      return false;
     }
+  };
+
+  const addDefaultWeight = async () => {
+    if (weight || addingWeight) return;
+    setAddingWeight(true);
+    const ok = await setWeight(defaultWeightKg);
+    if (!ok) setAddingWeight(false);
+  };
+
+  const addDefaultSleep = async () => {
+    if (sleepEntry || addingSleep) return;
+    setAddingSleep(true);
+    const ok = await setSleepHours(defaultSleepHours);
+    if (!ok) setAddingSleep(false);
   };
 
   return (
@@ -672,12 +763,13 @@ export default function JournalPage() {
           hasData={(iso) => buckets.has(iso)}
         />
 
-        <p className="text-xs font-semibold uppercase tracking-wide capitalize text-muted-foreground">
-          {formatDayLabel(selected)}
-        </p>
-
-        {/* Bien-être — éditable */}
-        <WellbeingCard log={log} onSet={(f, v) => void setMetric(f, v)} />
+        {/* Ressenti — éditable */}
+        <div className="space-y-2">
+          <p className="px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Ressenti
+          </p>
+          <WellbeingCard log={log} onSet={(f, v) => void setMetric(f, v)} />
+        </div>
 
         {/* Mesures — saisie inline (poids / sommeil / protéines) */}
         <div className="space-y-2">
@@ -689,31 +781,39 @@ export default function JournalPage() {
             label="Poids"
             target={profile?.weightTarget != null ? `Objectif ${profile.weightTarget} kg` : undefined}
             action={
-              <NumberPill
-                value={bucket?.weight?.kg}
-                onChange={(v) => void setWeight(v)}
-                step={0.1}
-                unit="kg"
-              />
+              weight ? (
+                <NumberPill
+                  value={weight.kg}
+                  onChange={(v) => void setWeight(v)}
+                  step={0.1}
+                  unit="kg"
+                />
+              ) : (
+                <AddMeasureButton loading={addingWeight} onClick={() => void addDefaultWeight()} />
+              )
             }
           />
           <MeasureRow
             icon={Moon}
             label="Sommeil"
             target={
-              bucket?.sleep?.quality != null
-                ? `Qualité ${bucket.sleep.quality}/5`
+              sleepEntry?.quality != null
+                ? `Qualité ${sleepEntry.quality}/5`
                 : profile?.sleepTargetH != null
                   ? `Objectif ${profile.sleepTargetH} h`
                   : undefined
             }
             action={
-              <NumberPill
-                value={bucket?.sleep?.hours}
-                onChange={(v) => void setSleepHours(v)}
-                step={0.5}
-                unit="h"
-              />
+              sleepEntry ? (
+                <NumberPill
+                  value={sleepEntry.hours}
+                  onChange={(v) => void setSleepHours(v)}
+                  step={0.5}
+                  unit="h"
+                />
+              ) : (
+                <AddMeasureButton loading={addingSleep} onClick={() => void addDefaultSleep()} />
+              )
             }
           />
           <MeasureRow

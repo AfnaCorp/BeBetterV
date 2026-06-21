@@ -24,51 +24,13 @@ import { DEFAULT_PROGRAM } from "@/lib/default-program";
 import { getExercise } from "@/lib/exercise-bank";
 import { DateStrip } from "@/components/ui/date-strip";
 import { toISODate } from "@/lib/utils/dates";
-import { formatDayLabel, useSelectedDate } from "@/lib/utils/timeline";
+import { useSelectedDate } from "@/lib/utils/timeline";
 import type {
   ProgramSession,
   ProgramTemplate,
   SessionEntry,
   SessionExercise,
 } from "@/types";
-
-// ─── Difficulté (3 niveaux, stockés en RPE) ──────────────────────────────────
-
-const DIFFICULTY = [
-  { label: "Facile", rpe: 3, active: "bg-green-100 text-green-700 ring-2 ring-green-400", idle: "text-green-700/60" },
-  { label: "Moyen", rpe: 6, active: "bg-yellow-100 text-yellow-700 ring-2 ring-yellow-400", idle: "text-yellow-700/60" },
-  { label: "Dur", rpe: 9, active: "bg-red-100 text-red-700 ring-2 ring-red-400", idle: "text-red-700/60" },
-] as const;
-
-function rpeToLevel(rpe: number) {
-  if (rpe <= 0) return -1; // non renseigné
-  if (rpe <= 4) return 0;
-  if (rpe <= 7) return 1;
-  return 2;
-}
-
-// Pastilles compactes de ressenti : ● vert / orange / rouge selon le niveau.
-const DOT_COLORS: string[] = ["bg-green-500", "bg-yellow-500", "bg-red-500"];
-
-function DifficultyPicker({ rpe, onChange }: { rpe: number; onChange: (rpe: number) => void }) {
-  const level = rpeToLevel(rpe);
-  return (
-    <div className="flex items-center gap-1">
-      {DIFFICULTY.map((d, i) => (
-        <button
-          key={d.label}
-          onClick={() => onChange(d.rpe)}
-          title={d.label}
-          aria-label={d.label}
-          aria-pressed={i === level}
-          className={`h-3.5 w-3.5 rounded-full transition ${
-            i === level ? `${DOT_COLORS[i]} scale-110` : "bg-muted hover:bg-muted-foreground/30"
-          }`}
-        />
-      ))}
-    </div>
-  );
-}
 
 // ─── Champ numérique avec steppers (mobile-friendly) ─────────────────────────
 
@@ -88,16 +50,16 @@ function NumberField({
   const dec = () => onChange(Math.max(min, Math.round((value - step) * 100) / 100));
   const inc = () => onChange(Math.round((value + step) * 100) / 100);
   return (
-    <div className="flex items-center gap-0.5 rounded-lg neu-inset px-0.5">
+    <div className="grid min-w-0 grid-cols-[1.5rem_minmax(0,1fr)_1.5rem] items-center rounded-full bg-muted/70 px-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.75),inset_0_-8px_18px_rgba(89,96,130,0.08)] ring-1 ring-white/70">
       <button
         type="button"
         onClick={dec}
-        className="grid h-7 w-6 shrink-0 place-items-center rounded-md text-muted-foreground active:bg-muted"
+        className="grid h-7 w-6 shrink-0 place-items-center rounded-full text-muted-foreground active:bg-muted"
         aria-label="Diminuer"
       >
         <Minus className="h-3 w-3" />
       </button>
-      <span className="flex items-baseline gap-0.5">
+      <span className="flex min-w-0 items-baseline justify-center gap-0.5">
         <input
           type="number"
           inputMode="decimal"
@@ -105,14 +67,14 @@ function NumberField({
           step={step}
           value={value}
           onChange={(e) => onChange(e.target.value === "" ? min : Number(e.target.value))}
-          className="w-9 bg-transparent text-center text-sm font-bold text-foreground outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+          className="w-8 bg-transparent text-center text-sm font-bold text-foreground outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
         />
-        <span className="text-[9px] uppercase tracking-wide text-muted-foreground">{unit}</span>
+        <span className="text-[8px] uppercase tracking-wide text-muted-foreground">{unit}</span>
       </span>
       <button
         type="button"
         onClick={inc}
-        className="grid h-7 w-6 shrink-0 place-items-center rounded-md text-muted-foreground active:bg-muted"
+        className="grid h-7 w-6 shrink-0 place-items-center rounded-full text-muted-foreground active:bg-muted"
         aria-label="Augmenter"
       >
         <Plus className="h-3 w-3" />
@@ -185,10 +147,6 @@ function TimelineView({
 
       {/* Détail du jour sélectionné */}
       <div>
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wide capitalize text-muted-foreground">
-          {formatDayLabel(selected)}
-        </p>
-
         <div className="space-y-2">
           {/* Saisie inline de la séance planifiée du jour. On la garde affichée même
               une fois réalisée (auto-validée à 100 %) : tout passe en vert, barre à
@@ -499,14 +457,6 @@ function LogView({
     });
   }
 
-  function updateRpe(exIdx: number, setIdx: number, rpe: number) {
-    setExercises((prev) => {
-      const next = prev.map((e) => ({ ...e, sets: e.sets.map((s) => ({ ...s })) }));
-      next[exIdx].sets[setIdx].rpe = rpe;
-      return next;
-    });
-  }
-
   function addSet(exIdx: number) {
     setExercises((prev) => {
       const next = prev.map((e) => ({ ...e, sets: e.sets.map((s) => ({ ...s })) }));
@@ -560,6 +510,11 @@ function LogView({
             : "shrink-0 border-b border-border/50 bg-card px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))]"
         }
       >
+        {inline && (
+          <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Séance du jour
+          </p>
+        )}
         <div className="flex items-center gap-3">
           {!inline && (
             <button onClick={onCancel} className="text-muted-foreground hover:text-foreground">
@@ -601,7 +556,7 @@ function LogView({
           return (
             <div
               key={exIdx}
-              className="relative neu-surface-sm overflow-hidden rounded-2xl pl-1.5"
+              className={`relative neu-surface-sm overflow-hidden rounded-2xl pl-1.5 ${inline ? "mx-1" : ""}`}
               style={{ boxShadow: "0 6px 14px -5px rgba(0,0,0,0.26)" }}
             >
               <span className={`absolute inset-y-0 left-0 w-1.5 ${statusBar}`} aria-hidden />
@@ -631,22 +586,33 @@ function LogView({
               </div>
               {!isCollapsed && (
               <>
-              <div className="divide-y divide-muted/40">
+              <div className="space-y-1.5 px-2 pb-1">
                 {ex.sets.map((set, setIdx) => {
                   const last = lastSets?.[setIdx];
                   return (
-                  <div key={setIdx} className={`px-3 py-1.5 transition ${set.done ? "bg-green-50/60" : ""}`}>
-                    <div className="flex items-center gap-2">
+                  <div
+                    key={setIdx}
+                    className={`rounded-2xl px-2.5 py-2 transition ring-1 ${
+                      set.done
+                        ? "bg-green-50/80 ring-green-200/70"
+                        : "bg-gradient-to-r from-white/80 to-muted/45 ring-white/70"
+                    }`}
+                  >
+                    <div className="grid grid-cols-[1.5rem_1.75rem_minmax(0,1fr)_minmax(0,1fr)_1.25rem] items-center gap-1.5">
                       <button
                         onClick={() => toggleSet(exIdx, setIdx)}
                         className={`grid h-6 w-6 shrink-0 place-items-center rounded-full border-2 transition ${
-                          set.done ? "border-green-500 bg-green-500 text-white" : "border-muted"
+                          set.done
+                            ? "border-green-500 bg-green-500 text-white shadow-[0_0_18px_rgba(34,197,94,0.32)]"
+                            : "border-muted bg-card/70"
                         }`}
                         aria-label={`Série ${setIdx + 1} ${set.done ? "faite" : "à faire"}`}
                       >
                         {set.done && <Check className="h-3.5 w-3.5" />}
                       </button>
-                      <span className="w-5 shrink-0 text-[11px] font-semibold text-muted-foreground">S{setIdx + 1}</span>
+                      <span className="shrink-0 rounded-full bg-card/70 py-1 text-center text-[10px] font-bold text-muted-foreground ring-1 ring-white/70">
+                        S{setIdx + 1}
+                      </span>
                       <NumberField
                         value={set.weight}
                         step={2.5}
@@ -661,19 +627,16 @@ function LogView({
                         unit="reps"
                         onChange={(v) => updateSet(exIdx, setIdx, "reps", v)}
                       />
-                      <div className="ml-auto flex items-center gap-2">
-                        <DifficultyPicker rpe={set.rpe} onChange={(rpe) => updateRpe(exIdx, setIdx, rpe)} />
-                        <button
-                          onClick={() => removeSet(exIdx, setIdx)}
-                          className="shrink-0 text-muted-foreground/40 hover:text-destructive"
-                          aria-label="Supprimer la série"
-                        >
-                          <X className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
+                      <button
+                        onClick={() => removeSet(exIdx, setIdx)}
+                        className="grid h-6 w-5 shrink-0 place-items-center text-muted-foreground/40 hover:text-destructive"
+                        aria-label="Supprimer la série"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
                     </div>
                     {last && (
-                      <p className="pl-[3.25rem] text-[10px] leading-tight text-muted-foreground/70">
+                      <p className="pl-[3.65rem] pt-0.5 text-[9px] leading-tight text-muted-foreground/70">
                         dernière : {last.weight}×{last.reps}
                       </p>
                     )}

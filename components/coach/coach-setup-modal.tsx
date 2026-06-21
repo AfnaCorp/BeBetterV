@@ -15,12 +15,12 @@ export function CoachSetupModal() {
   if (!needsSetup) return null;
 
   return (
-    <div className="fixed inset-0 z-[90] grid place-items-center p-4">
-      <div className="absolute inset-0 bg-foreground/30 backdrop-blur-sm" aria-hidden />
+    <div className="fixed inset-0 z-[90] flex min-h-dvh items-center justify-center p-4">
+      <div className="absolute inset-0 bg-foreground/30 backdrop-blur-md" aria-hidden />
       <div
         role="dialog"
         aria-label="Configurer ton coach"
-        className="neu-surface relative w-full max-w-sm rounded-3xl p-6 shadow-2xl"
+        className="neu-surface relative w-full max-w-sm rounded-3xl border border-border p-6 shadow-2xl"
       >
         <div className="mb-5 text-center">
           <h2 className="text-xl font-semibold text-foreground">Donne vie à ton coach</h2>

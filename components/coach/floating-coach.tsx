@@ -282,9 +282,11 @@ export function FloatingCoach() {
             zIndex: 90,
             transition: dragging
               ? "none"
-              : "left 260ms cubic-bezier(0.34, 1.4, 0.5, 1), top 200ms ease-out, transform 120ms ease"
+              : "left 260ms cubic-bezier(0.34, 1.4, 0.5, 1), top 200ms ease-out, transform 120ms ease",
+            boxShadow:
+              "0 6px 14px -5px rgba(0,0,0,0.30), 0 18px 34px -12px rgba(198,74,214,0.42)"
           }}
-          className="grid place-items-center rounded-full bg-accent-gradient text-white shadow-glow active:scale-95"
+          className="grid place-items-center rounded-full bg-accent-gradient text-white active:scale-95"
         >
           <MessageCircle className="h-8 w-8" />
         </button>
