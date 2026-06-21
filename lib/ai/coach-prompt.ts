@@ -108,6 +108,7 @@ export function buildContextPayload(ctx: CoachContext) {
         engagement: d.engagement,
         wellbeing: d.wellbeing,
         meaning: d.meaning,
+        proteinG: d.proteinG,
         notes: d.notes
       })),
       habits: ctx.recentHabits.slice(0, 30).map((h) => ({

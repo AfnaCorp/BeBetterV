@@ -42,11 +42,13 @@ const SELECTED_DATE_KEY = "athleteos:selected-date";
 export function useSelectedDate(): [string, (iso: string) => void] {
   const [selected, setSelected] = useState<string>(() => toISODate(new Date()));
 
-  // Hydrate depuis localStorage après le mount (évite le mismatch SSR).
-  // On ignore une date hors de la fenêtre de la frise (sinon aucun jour
-  // sélectionné visible) en repassant sur aujourd'hui.
+  // Hydrate depuis sessionStorage après le mount (évite le mismatch SSR).
+  // On utilise sessionStorage (et non localStorage) pour que le jour choisi ne
+  // survive qu'à la session courante : switcher d'onglet le conserve, mais une
+  // relance de l'app repart sur aujourd'hui — pas sur une date passée de la
+  // veille. On ignore aussi une date hors fenêtre de la frise.
   useEffect(() => {
-    const stored = localStorage.getItem(SELECTED_DATE_KEY);
+    const stored = sessionStorage.getItem(SELECTED_DATE_KEY);
     if (stored && buildTimeline().some((d) => toISODate(d) === stored)) {
       setSelected(stored);
     }
@@ -54,7 +56,7 @@ export function useSelectedDate(): [string, (iso: string) => void] {
 
   const select = (iso: string) => {
     setSelected(iso);
-    localStorage.setItem(SELECTED_DATE_KEY, iso);
+    sessionStorage.setItem(SELECTED_DATE_KEY, iso);
   };
 
   return [selected, select];

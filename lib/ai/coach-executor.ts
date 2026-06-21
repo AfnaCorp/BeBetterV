@@ -201,16 +201,22 @@ async function logDay(ctx: ExecCtx, args: ToolArgs): Promise<WriteRecord> {
   const wellbeing = args.wellbeing != null ? Number(args.wellbeing) : undefined;
   const meaning = args.meaning != null ? Number(args.meaning) : undefined;
   const notes = args.notes != null ? String(args.notes) : undefined;
+  // Apport de protéines à ajouter (au fur et à mesure de la journée).
+  const proteinG = args.proteinG != null ? Number(args.proteinG) : undefined;
+  const proteinLabel = args.proteinLabel != null ? String(args.proteinLabel) : undefined;
 
   if (
     energy === undefined &&
     engagement === undefined &&
     wellbeing === undefined &&
     meaning === undefined &&
-    notes === undefined
+    notes === undefined &&
+    proteinG === undefined
   ) {
-    throw new Error("au moins un champ requis (energy, engagement, wellbeing, meaning, notes)");
+    throw new Error("au moins un champ requis (energy, engagement, wellbeing, meaning, notes, proteinG)");
   }
+
+  const before = await snapshotBefore(ctx.uid, "dayLogs", date);
 
   const payload: Record<string, unknown> = {
     date,
@@ -222,9 +228,20 @@ async function logDay(ctx: ExecCtx, args: ToolArgs): Promise<WriteRecord> {
   if (wellbeing !== undefined) payload.wellbeing = wellbeing;
   if (meaning !== undefined) payload.meaning = meaning;
   if (notes !== undefined) payload.notes = notes;
+  // Protéines : on ajoute un apport au détail existant et on recalcule le total.
+  if (proteinG !== undefined && Number.isFinite(proteinG)) {
+    const prev = Array.isArray(before?.proteinEntries)
+      ? (before!.proteinEntries as { g: number; label?: string; at: string; source: string }[])
+      : [];
+    const next = [
+      ...prev,
+      { g: proteinG, ...(proteinLabel ? { label: proteinLabel } : {}), at: new Date().toISOString(), source: "coach" }
+    ];
+    payload.proteinEntries = next;
+    payload.proteinG = next.reduce((acc, e) => acc + e.g, 0);
+  }
 
   const docRef = userCol(ctx.uid, "dayLogs").doc(date);
-  const before = await snapshotBefore(ctx.uid, "dayLogs", date);
   await docRef.set(payload, { merge: true });
   ctx.undo = { type: "restore", collection: "dayLogs", id: date, before, label: `journée du ${date}` };
 
@@ -233,6 +250,7 @@ async function logDay(ctx: ExecCtx, args: ToolArgs): Promise<WriteRecord> {
   if (engagement !== undefined) parts.push(`engagement ${engagement}/5`);
   if (wellbeing !== undefined) parts.push(`bien-être ${wellbeing}/5`);
   if (meaning !== undefined) parts.push(`sens ${meaning}/5`);
+  if (proteinG !== undefined) parts.push(`+${proteinG} g protéines`);
   return {
     kind: "day",
     summary: `Journée notée : ${parts.join(", ") || "notes mises à jour"}`,

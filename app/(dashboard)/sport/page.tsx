@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Dumbbell,
   Plus,
@@ -10,42 +11,26 @@ import {
   Check,
   Pencil,
   X,
-  ArrowUp,
-  ArrowDown,
   Moon,
   ChevronLeft,
   Minus,
   Search,
-  Repeat,
 } from "lucide-react";
 import { useAppData } from "@/components/app-data-provider";
 import { CoachWriteBanner } from "@/components/coach/coach-write-banner";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { DEFAULT_PROGRAM } from "@/lib/default-program";
-import {
-  exercisesByGroup,
-  getExercise,
-  searchExercises,
-} from "@/lib/exercise-bank";
+import { getExercise } from "@/lib/exercise-bank";
 import { DateStrip } from "@/components/ui/date-strip";
 import { toISODate } from "@/lib/utils/dates";
 import { formatDayLabel, useSelectedDate } from "@/lib/utils/timeline";
 import type {
-  ExerciseDef,
-  MuscleGroup,
-  ProgramExercise,
   ProgramSession,
   ProgramTemplate,
   SessionEntry,
   SessionExercise,
 } from "@/types";
-import {
-  MUSCLE_GROUP_LABELS,
-  MUSCLE_GROUP_ORDER,
-  MUSCLE_TO_GROUP,
-} from "@/types/muscle";
 
 // ─── Difficulté (3 niveaux, stockés en RPE) ──────────────────────────────────
 
@@ -140,68 +125,10 @@ function NumberField({
 
 const isoDay = toISODate;
 
-/** Jours de la semaine, lundi = index 0 (ordre des séances du programme). */
-const WEEKDAYS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"] as const;
-
-/**
- * Statut "repos" déclaré du jour (pour l'éditeur / le toggle). Le flag explicite
- * `rest` prime quand il est défini ; sinon (legacy) on déduit du nombre d'exos.
- */
-function isRestDay(session: ProgramSession): boolean {
-  if (typeof session.rest === "boolean") return session.rest;
-  return session.exercises.length === 0;
-}
-
 /** Le jour propose-t-il une vraie séance à réaliser (pas repos, au moins un exo nommé) ? */
 function hasPlannedSession(session: ProgramSession): boolean {
   if (session.rest) return false;
   return session.exercises.some((e) => e.name.trim());
-}
-
-interface GroupVolume {
-  group: MuscleGroup;
-  /** Nombre de jours de la semaine où le groupe est sollicité (en muscle primaire). */
-  days: number;
-  /** Total de séries ciblant ce groupe (primaire = plein, secondaire = demi-compté). */
-  sets: number;
-}
-
-/**
- * Agrège le volume hebdomadaire par grand groupe musculaire à partir des séances.
- * Un exo lié à la banque compte ses séries sur ses groupes primaires (×1) et
- * secondaires (×0.5, arrondi). Les exos non liés sont ignorés (pas de muscles).
- */
-function weeklyMuscleVolume(sessions: ProgramSession[]): GroupVolume[] {
-  const setsByGroup = new Map<MuscleGroup, number>();
-  const daysByGroup = new Map<MuscleGroup, Set<number>>();
-
-  sessions.forEach((session, dayIdx) => {
-    if (session.rest) return;
-    for (const ex of session.exercises) {
-      const def = getExercise(ex.exerciseId);
-      if (!def) continue;
-      const sets = ex.targetSets || 0;
-      const primaryGroups = new Set(def.primary.map((m) => MUSCLE_TO_GROUP[m]));
-      const secondaryGroups = new Set(
-        (def.secondary ?? []).map((m) => MUSCLE_TO_GROUP[m])
-      );
-      for (const g of primaryGroups) {
-        setsByGroup.set(g, (setsByGroup.get(g) ?? 0) + sets);
-        if (!daysByGroup.has(g)) daysByGroup.set(g, new Set());
-        daysByGroup.get(g)!.add(dayIdx);
-      }
-      for (const g of secondaryGroups) {
-        if (primaryGroups.has(g)) continue; // déjà compté en plein
-        setsByGroup.set(g, (setsByGroup.get(g) ?? 0) + Math.round(sets / 2));
-      }
-    }
-  });
-
-  return MUSCLE_GROUP_ORDER.map((group) => ({
-    group,
-    days: daysByGroup.get(group)?.size ?? 0,
-    sets: setsByGroup.get(group) ?? 0,
-  }));
 }
 
 /**
@@ -225,7 +152,6 @@ function TimelineView({
   renderPlanned: (session: ProgramSession, day: string) => React.ReactNode;
 }) {
   const { sessions } = useAppData();
-  const todayIso = isoDay(new Date());
   const [selected, setSelected] = useSelectedDate();
 
   // Séances réalisées indexées par jour (ISO).
@@ -243,10 +169,11 @@ function TimelineView({
   const selectedDate = new Date(`${selected}T00:00:00`);
   const doneSessions = doneByDay.get(selected) ?? [];
   const planned = plannedFor(program, selectedDate);
-  const isFutureOrToday = selected >= todayIso;
-  // Affiche la saisie inline pour la séance planifiée du jour (aujourd'hui/futur),
-  // qu'elle soit déjà réalisée ou non : une séance auto-validée reste en édition.
-  const showInline = Boolean(planned) && isFutureOrToday;
+  // Affichage interactif (exos dépliables, barre de progression) pour TOUT jour ayant
+  // une séance de programme — passé inclus : on reconstruit l'état réel (coches/poids),
+  // 100 % si validée. Plus de récap figé. La carte récap ne sert que pour les séances
+  // hors-programme d'un jour (cas marginal, ex. séance ajoutée par le coach sans plan).
+  const showInline = Boolean(planned);
 
   return (
     <div className="space-y-5">
@@ -268,8 +195,9 @@ function TimelineView({
               100 %, l'utilisateur reste sur sa séance sans bascule vers un récap. */}
           {showInline && renderPlanned(planned!, selected)}
 
-          {/* Séances réalisées ce jour — sauf celle déjà ouverte en saisie inline,
-              qui s'affiche en mode édition (tout coché) plutôt qu'en carte récap. */}
+          {/* Séances HORS-PROGRAMME du jour (sans séance planifiée correspondante) :
+              affichées en carte récap. La séance planifiée, elle, est déjà rendue en
+              interactif ci-dessus, donc on la masque ici. */}
           {doneSessions
             .filter((s) => !(planned && s.programSessionId === planned.id))
             .map((s) => (
@@ -318,599 +246,6 @@ function DoneSessionCard({ session }: { session: SessionEntry }) {
         </p>
       </CardContent>
     </Card>
-  );
-}
-
-// ─── Éditeur de programme ──────────────────────────────────────────────────────
-
-/** Petit champ numérique compact et labellisé pour l'éditeur de programme. */
-function TargetField({
-  label,
-  value,
-  onChange,
-  step = 1,
-  min = 0,
-  placeholder,
-}: {
-  label: string;
-  value: number | undefined;
-  onChange: (v: number | undefined) => void;
-  step?: number;
-  min?: number;
-  placeholder?: string;
-}) {
-  const dec = () => onChange(Math.max(min, Math.round(((value ?? min) - step) * 100) / 100));
-  const inc = () => onChange(Math.round(((value ?? min) + step) * 100) / 100);
-  return (
-    <div className="flex flex-1 flex-col items-center gap-1">
-      <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{label}</span>
-      <div className="flex w-full items-center justify-between gap-0.5 rounded-lg neu-inset px-1 py-0.5">
-        <button
-          type="button"
-          onClick={dec}
-          className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-muted-foreground active:bg-muted"
-          aria-label={`Diminuer ${label}`}
-        >
-          <Minus className="h-3 w-3" />
-        </button>
-        <input
-          type="number"
-          inputMode="decimal"
-          min={min}
-          step={step}
-          value={value ?? ""}
-          placeholder={placeholder}
-          onChange={(e) => onChange(e.target.value === "" ? undefined : Number(e.target.value))}
-          className="w-full min-w-0 bg-transparent text-center text-sm font-semibold text-foreground outline-none [appearance:textfield] placeholder:text-muted-foreground/50 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-        />
-        <button
-          type="button"
-          onClick={inc}
-          className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-muted-foreground active:bg-muted"
-          aria-label={`Augmenter ${label}`}
-        >
-          <Plus className="h-3 w-3" />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function ExerciseRow({
-  index,
-  ex,
-  onChange,
-  onRemove,
-  onMoveUp,
-  onMoveDown,
-}: {
-  index: number;
-  ex: ProgramExercise;
-  onChange: (updated: ProgramExercise) => void;
-  onRemove: () => void;
-  onMoveUp?: () => void;
-  onMoveDown?: () => void;
-}) {
-  const def = getExercise(ex.exerciseId);
-  const primaryGroups = def
-    ? Array.from(new Set(def.primary.map((m) => MUSCLE_GROUP_LABELS[MUSCLE_TO_GROUP[m]])))
-    : [];
-  return (
-    <div className="rounded-2xl bg-card/70 p-3 ring-1 ring-border/50">
-      <div className="flex items-center gap-2">
-        <span className="grid h-6 w-6 shrink-0 place-items-center rounded-lg bg-muted text-[11px] font-bold text-muted-foreground">
-          {index + 1}
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-foreground">{ex.name}</p>
-          {primaryGroups.length > 0 && (
-            <p className="truncate text-[11px] text-muted-foreground">{primaryGroups.join(" · ")}</p>
-          )}
-        </div>
-        <div className="flex shrink-0 items-center">
-          <button
-            onClick={onMoveUp}
-            disabled={!onMoveUp}
-            className="grid h-7 w-6 place-items-center text-muted-foreground hover:text-foreground disabled:opacity-20"
-            aria-label="Monter"
-          >
-            <ArrowUp className="h-3.5 w-3.5" />
-          </button>
-          <button
-            onClick={onMoveDown}
-            disabled={!onMoveDown}
-            className="grid h-7 w-6 place-items-center text-muted-foreground hover:text-foreground disabled:opacity-20"
-            aria-label="Descendre"
-          >
-            <ArrowDown className="h-3.5 w-3.5" />
-          </button>
-          <button
-            onClick={onRemove}
-            className="grid h-7 w-6 place-items-center text-muted-foreground hover:text-destructive"
-            aria-label="Supprimer l'exercice"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
-      <div className="mt-2.5 flex items-end gap-2 pl-8">
-        <TargetField
-          label="Séries"
-          value={ex.targetSets}
-          min={1}
-          onChange={(v) => onChange({ ...ex, targetSets: v ?? 1 })}
-        />
-        <TargetField
-          label="Reps"
-          value={ex.targetReps}
-          min={1}
-          onChange={(v) => onChange({ ...ex, targetReps: v ?? 1 })}
-        />
-        <TargetField
-          label="Kg"
-          value={ex.targetWeight}
-          step={2.5}
-          placeholder="—"
-          onChange={(v) => onChange({ ...ex, targetWeight: v })}
-        />
-      </div>
-    </div>
-  );
-}
-
-/** Bottom-sheet de sélection d'un exercice dans la banque (recherche + filtre groupe). */
-function ExerciseBankPicker({
-  existingIds,
-  onPick,
-  onClose,
-}: {
-  existingIds: string[];
-  onPick: (def: ExerciseDef) => void;
-  onClose: () => void;
-}) {
-  const [query, setQuery] = useState("");
-  const [group, setGroup] = useState<MuscleGroup | null>(null);
-  const existing = new Set(existingIds);
-
-  const results = useMemo(() => {
-    let list = searchExercises(query);
-    if (group) {
-      const ids = new Set(exercisesByGroup(group).map((e) => e.id));
-      list = list.filter((e) => ids.has(e.id));
-    }
-    return list;
-  }, [query, group]);
-
-  return (
-    <div className="fixed inset-0 z-[90] flex flex-col justify-end" role="dialog" aria-modal="true">
-      <button className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} aria-label="Fermer" />
-      <div className="relative flex max-h-[85vh] flex-col rounded-t-3xl bg-card pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl">
-        <div className="flex items-center justify-between gap-2 px-5 pb-3 pt-4">
-          <h3 className="text-base font-semibold text-foreground">Banque d&apos;exercices</h3>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        <div className="px-5">
-          <div className="flex items-center gap-2 rounded-xl neu-inset px-3 py-2">
-            <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
-            <input
-              autoFocus
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Rechercher un exercice…"
-              className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
-            />
-          </div>
-        </div>
-
-        {/* Filtres par groupe musculaire */}
-        <div className="-mx-1 mt-3 flex gap-1.5 overflow-x-auto px-5 pb-1 [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: "none" }}>
-          <button
-            onClick={() => setGroup(null)}
-            className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium transition ${
-              group === null ? "bg-accent-gradient text-white" : "neu-surface-sm text-muted-foreground"
-            }`}
-          >
-            Tous
-          </button>
-          {MUSCLE_GROUP_ORDER.map((g) => (
-            <button
-              key={g}
-              onClick={() => setGroup(g)}
-              className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium transition ${
-                group === g ? "bg-accent-gradient text-white" : "neu-surface-sm text-muted-foreground"
-              }`}
-            >
-              {MUSCLE_GROUP_LABELS[g]}
-            </button>
-          ))}
-        </div>
-
-        <div className="mt-3 flex-1 space-y-1 overflow-y-auto px-3 pb-2">
-          {results.map((def) => {
-            const already = existing.has(def.id);
-            const groups = Array.from(new Set(def.primary.map((m) => MUSCLE_GROUP_LABELS[MUSCLE_TO_GROUP[m]])));
-            return (
-              <button
-                key={def.id}
-                onClick={() => onPick(def)}
-                className="flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left transition hover:bg-muted/40"
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium text-foreground">{def.name}</span>
-                  <span className="block truncate text-[11px] text-muted-foreground">{groups.join(" · ")}</span>
-                </span>
-                {already ? (
-                  <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
-                    ajouté
-                  </span>
-                ) : (
-                  <Plus className="h-4 w-4 shrink-0 text-primary" />
-                )}
-              </button>
-            );
-          })}
-
-          {results.length === 0 && (
-            <p className="px-3 py-8 text-center text-sm text-muted-foreground">
-              Aucun exercice trouvé pour cette recherche.
-            </p>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SessionBlock({
-  dayLabel,
-  session,
-  defaultOpen,
-  onChange,
-}: {
-  dayLabel: string;
-  session: ProgramSession;
-  defaultOpen: boolean;
-  onChange: (s: ProgramSession) => void;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  const [picking, setPicking] = useState(false);
-  const dayShort = dayLabel.slice(0, 3); // Lun, Mar…
-  const isRest = isRestDay(session);
-  const namedExercises = session.exercises.filter((e) => e.name.trim());
-
-  /** Ajoute un exo choisi dans la banque (cibles par défaut 3×10). */
-  function addFromBank(def: ExerciseDef) {
-    onChange({
-      ...session,
-      rest: false,
-      exercises: [
-        ...session.exercises.filter((e) => e.name.trim()), // purge les lignes vides
-        { name: def.name, exerciseId: def.id, targetSets: 3, targetReps: 10 },
-      ],
-    });
-    setOpen(true);
-  }
-
-  function updateExercise(i: number, ex: ProgramExercise) {
-    const exercises = [...session.exercises];
-    exercises[i] = ex;
-    onChange({ ...session, exercises });
-  }
-
-  function removeExercise(i: number) {
-    onChange({ ...session, exercises: session.exercises.filter((_, idx) => idx !== i) });
-  }
-
-  function moveExercise(i: number, dir: -1 | 1) {
-    const j = i + dir;
-    if (j < 0 || j >= session.exercises.length) return;
-    const exercises = [...session.exercises];
-    [exercises[i], exercises[j]] = [exercises[j], exercises[i]];
-    onChange({ ...session, exercises });
-  }
-
-  /**
-   * Bascule repos ⇄ séance via le seul flag `rest` — on ne touche jamais aux
-   * exercices, pour qu'un aller-retour Repos → Séance les conserve.
-   */
-  function setRest(rest: boolean) {
-    onChange({ ...session, rest });
-    setOpen(true);
-  }
-
-  const totalSets = namedExercises.reduce((acc, ex) => acc + (ex.targetSets || 0), 0);
-
-  return (
-    <div
-      className={`overflow-hidden rounded-2xl transition ${
-        isRest ? "bg-muted/40 ring-1 ring-border/40" : "neu-surface-sm"
-      }`}
-    >
-      {/* En-tête : badge jour de semaine + titre + chevron */}
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left"
-        aria-expanded={open}
-      >
-        <span
-          className={`grid h-10 w-10 shrink-0 place-items-center rounded-2xl ${
-            isRest ? "bg-muted text-muted-foreground" : "bg-accent-gradient text-white shadow-sm"
-          }`}
-        >
-          <span className="text-[11px] font-bold uppercase leading-none">{dayShort}</span>
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="flex items-center gap-1.5">
-            <span className="truncate text-sm font-semibold text-foreground">{dayLabel}</span>
-            {isRest && <Moon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
-          </span>
-          <span className="block truncate text-xs text-muted-foreground">
-            {isRest
-              ? session.title && session.title !== "Repos"
-                ? session.title
-                : "Repos"
-              : `${session.title ? session.title + " · " : ""}${
-                  namedExercises.length === 0
-                    ? "séance vide"
-                    : `${namedExercises.length} exo${namedExercises.length > 1 ? "s" : ""} · ${totalSets} série${totalSets > 1 ? "s" : ""}`
-                }`}
-          </span>
-        </span>
-        <ChevronDown
-          className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`}
-        />
-      </button>
-
-      {open && (
-        <div className="space-y-2.5 border-t border-border/40 px-3 pb-3 pt-3">
-          {/* Bascule Séance / Repos */}
-          <div className="flex rounded-xl bg-muted/60 p-0.5">
-            <button
-              onClick={() => setRest(false)}
-              className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-semibold transition ${
-                !isRest ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"
-              }`}
-            >
-              <Dumbbell className="h-3.5 w-3.5" /> Séance
-            </button>
-            <button
-              onClick={() => setRest(true)}
-              className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-semibold transition ${
-                isRest ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"
-              }`}
-            >
-              <Moon className="h-3.5 w-3.5" /> Repos
-            </button>
-          </div>
-
-          <Input
-            className="neu-inset rounded-xl border-none px-3 text-sm font-medium shadow-none focus-visible:ring-0"
-            placeholder={isRest ? "Nom (optionnel — ex: Cardio léger…)" : "Nom de la séance (ex: Push A)"}
-            value={session.title}
-            onChange={(e) => onChange({ ...session, title: e.target.value })}
-          />
-
-          {!isRest && (
-            <>
-              {session.exercises.map((ex, i) => (
-                <ExerciseRow
-                  key={i}
-                  index={i}
-                  ex={ex}
-                  onChange={(updated) => updateExercise(i, updated)}
-                  onRemove={() => removeExercise(i)}
-                  onMoveUp={i > 0 ? () => moveExercise(i, -1) : undefined}
-                  onMoveDown={i < session.exercises.length - 1 ? () => moveExercise(i, 1) : undefined}
-                />
-              ))}
-              <button
-                onClick={() => setPicking(true)}
-                className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-muted py-2.5 text-xs font-medium text-primary transition hover:border-primary hover:bg-primary/5"
-              >
-                <Plus className="h-3.5 w-3.5" /> Ajouter un exercice
-              </button>
-            </>
-          )}
-
-          {isRest && (
-            <p className="flex items-center gap-2 py-1 text-xs text-muted-foreground">
-              <Moon className="h-3.5 w-3.5 shrink-0" />
-              Aucune séance ce jour — récupération.
-            </p>
-          )}
-        </div>
-      )}
-
-      {picking && (
-        <ExerciseBankPicker
-          existingIds={session.exercises.map((e) => e.exerciseId).filter(Boolean) as string[]}
-          onPick={(def) => {
-            addFromBank(def);
-            setPicking(false);
-          }}
-          onClose={() => setPicking(false)}
-        />
-      )}
-    </div>
-  );
-}
-
-/** Récap du volume hebdo par groupe musculaire (jours sollicités + séries). */
-function WeeklyMuscleSummary({ sessions }: { sessions: ProgramSession[] }) {
-  const volume = useMemo(() => weeklyMuscleVolume(sessions), [sessions]);
-  const maxSets = Math.max(1, ...volume.map((v) => v.sets));
-  const worked = volume.filter((v) => v.sets > 0);
-
-  return (
-    <div className="rounded-2xl neu-surface p-4">
-      <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-        Équilibre de la semaine
-      </p>
-
-      {worked.length === 0 ? (
-        <p className="py-2 text-sm text-muted-foreground">
-          Ajoute des exercices pour voir combien de fois chaque muscle est travaillé.
-        </p>
-      ) : (
-        <div className="space-y-2.5">
-          {volume.map((v) => {
-            const pct = Math.round((v.sets / maxSets) * 100);
-            const untrained = v.sets === 0;
-            return (
-              <div key={v.group} className="flex items-center gap-3">
-                <span
-                  className={`w-24 shrink-0 text-xs font-medium ${
-                    untrained ? "text-muted-foreground/50" : "text-foreground"
-                  }`}
-                >
-                  {MUSCLE_GROUP_LABELS[v.group]}
-                </span>
-                <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
-                  {!untrained && (
-                    <div
-                      className="h-full rounded-full bg-accent-gradient transition-all"
-                      style={{ width: `${Math.max(8, pct)}%` }}
-                    />
-                  )}
-                </div>
-                <span
-                  className={`w-20 shrink-0 text-right text-[11px] tabular-nums ${
-                    untrained ? "text-muted-foreground/50" : "text-muted-foreground"
-                  }`}
-                >
-                  {untrained ? "—" : `${v.days}j · ${v.sets} séries`}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ProgramEditor({
-  initial,
-  onSave,
-  onCancel,
-}: {
-  initial: Omit<ProgramTemplate, "id" | "createdAt">;
-  onSave: (draft: Omit<ProgramTemplate, "id" | "createdAt">) => void;
-  onCancel: () => void;
-}) {
-  // Programme = semaine fixe de 7 jours (Lundi…Dimanche). On normalise le draft
-  // pour toujours avoir exactement 7 sessions, dans l'ordre des jours.
-  const [draft, setDraft] = useState<Omit<ProgramTemplate, "id" | "createdAt">>(() => {
-    const sessions = WEEKDAYS.map((_, i) => {
-      const existing = initial.sessions[i];
-      if (existing) return existing;
-      return { id: crypto.randomUUID(), title: "", rest: true, exercises: [] };
-    });
-    return { ...initial, sessions };
-  });
-
-  function updateSession(i: number, s: ProgramSession) {
-    setDraft((d) => {
-      const sessions = [...d.sessions];
-      sessions[i] = s;
-      return { ...d, sessions };
-    });
-  }
-
-  /**
-   * Nettoie le draft avant sauvegarde : retire les lignes d'exos sans nom (mais
-   * conserve les exos nommés, même sur un jour repos, pour un futur retour en
-   * séance). Le statut repos suit le flag explicite ; à défaut, on le déduit.
-   */
-  function save() {
-    const sessions = draft.sessions.map((s) => {
-      const exercises = s.exercises.filter((e) => e.name.trim());
-      const rest = typeof s.rest === "boolean" ? s.rest : exercises.length === 0;
-      return { ...s, exercises, rest };
-    });
-    onSave({ ...draft, name: draft.name.trim(), sessions });
-  }
-
-  const trainingDays = draft.sessions.filter((s) => !isRestDay(s)).length;
-
-  return (
-    <div className="flex min-h-[100dvh] flex-col">
-      {/* Header sticky */}
-      <header className="sticky top-0 z-20 -mx-4 flex items-center gap-2 border-b border-border/50 bg-background/85 px-4 py-3 backdrop-blur sm:-mx-5 sm:px-5">
-        <button
-          onClick={onCancel}
-          className="grid h-9 w-9 shrink-0 place-items-center rounded-xl neu-pressable text-muted-foreground"
-          aria-label="Retour"
-        >
-          <ChevronLeft className="h-5 w-5" />
-        </button>
-        <h1 className="flex-1 truncate text-base font-semibold text-foreground">
-          {initial.name ? "Modifier le programme" : "Nouveau programme"}
-        </h1>
-        <Button size="sm" onClick={save} disabled={!draft.name.trim()}>
-          <Check className="mr-1.5 h-4 w-4" /> Enregistrer
-        </Button>
-      </header>
-
-      <div className="space-y-5 py-5 pb-28">
-        {/* Carte réglages : nom du programme */}
-        <div className="rounded-2xl neu-surface p-4">
-          <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Nom du programme
-          </label>
-          <Input
-            className="text-base font-semibold"
-            placeholder="ex: PPL, Full Body…"
-            value={draft.name}
-            onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-          />
-          <p className="mt-2 flex items-start gap-1.5 text-xs text-muted-foreground">
-            <Repeat className="mt-0.5 h-3 w-3 shrink-0" />
-            <span>
-              Programme hebdomadaire :{" "}
-              <strong className="text-foreground">
-                {trainingDays} jour{trainingDays > 1 ? "s" : ""} d&apos;entraînement
-              </strong>{" "}
-              par semaine, identique chaque semaine.
-            </span>
-          </p>
-        </div>
-
-        {/* Récap volume hebdo par muscle */}
-        <WeeklyMuscleSummary sessions={draft.sessions} />
-
-        {/* Les 7 jours de la semaine */}
-        <div className="space-y-1.5">
-          <p className="px-1 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-            La semaine
-          </p>
-          <div className="space-y-2.5">
-            {draft.sessions.map((s, i) => (
-              <SessionBlock
-                key={s.id}
-                dayLabel={WEEKDAYS[i]}
-                session={s}
-                defaultOpen={false}
-                onChange={(updated) => updateSession(i, updated)}
-              />
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Footer sticky : enregistrer / annuler */}
-      <div className="sticky bottom-0 z-20 -mx-4 mt-auto flex gap-2 border-t border-border/50 bg-background/85 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur sm:-mx-5 sm:px-5">
-        <Button variant="ghost" className="flex-1" onClick={onCancel}>
-          Annuler
-        </Button>
-        <Button className="flex-[2]" size="lg" onClick={save} disabled={!draft.name.trim()}>
-          <Check className="mr-1.5 h-4 w-4" /> Enregistrer le programme
-        </Button>
-      </div>
-    </div>
   );
 }
 
@@ -1494,9 +829,9 @@ function buildInitial(
 }
 
 export default function SportPage() {
-  const { addSession, updateSession, addProgram, updateProgram, programs, sessions, ready } = useAppData();
+  const router = useRouter();
+  const { addSession, updateSession, addProgram, programs, sessions, ready } = useAppData();
   const [active, setActive] = useState<{ programId: string; session: ProgramSession; programName: string } | null>(null);
-  const [editing, setEditing] = useState<{ id: string | null; initial: Omit<ProgramTemplate, "id" | "createdAt"> } | null>(null);
   // Id Firestore de la SessionEntry par clé `jour|programSessionId`. Évite de créer
   // plusieurs entrées pour un même jour pendant que `sessions` (temps réel) se met à
   // jour après une création — tracking jour par jour sans doublon.
@@ -1541,15 +876,6 @@ export default function SportPage() {
     setActive(null);
   }
 
-  async function handleSaveProgram(draft: Omit<ProgramTemplate, "id" | "createdAt">) {
-    if (editing?.id) {
-      await updateProgram(editing.id, draft);
-    } else {
-      await addProgram(draft);
-    }
-    setEditing(null);
-  }
-
   // Index global des exercices (pour suggestions/pré-remplissage).
   const exerciseIndex = buildExerciseIndex(sessions);
   const library = [...exerciseIndex.keys()].sort((a, b) => a.localeCompare(b, "fr"));
@@ -1587,17 +913,6 @@ export default function SportPage() {
     if (activeProgram) return renderSession(activeProgram, active.session, false, isoDay(new Date()));
   }
 
-  // Éditeur
-  if (editing) {
-    return (
-      <ProgramEditor
-        initial={editing.initial}
-        onSave={handleSaveProgram}
-        onCancel={() => setEditing(null)}
-      />
-    );
-  }
-
   const program = programs[0];
 
   return (
@@ -1607,7 +922,7 @@ export default function SportPage() {
         <h1 className="text-2xl font-semibold text-foreground">Sport</h1>
         {program && (
           <button
-            onClick={() => setEditing({ id: program.id, initial: { name: program.name, sessions: JSON.parse(JSON.stringify(program.sessions)) } })}
+            onClick={() => router.push(`/sport/edit?id=${program.id}`)}
             className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
           >
             <Pencil className="h-4 w-4" /> Modifier
@@ -1624,7 +939,7 @@ export default function SportPage() {
             <p className="text-sm text-muted-foreground">
               Crée ton programme d'entraînement pour commencer à suivre tes séances.
             </p>
-            <Button onClick={() => setEditing({ id: null, initial: { name: "", sessions: [] } })}>
+            <Button onClick={() => router.push("/sport/edit")}>
               <Plus className="mr-2 h-4 w-4" /> Créer un programme
             </Button>
           </CardContent>

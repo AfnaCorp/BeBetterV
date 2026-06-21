@@ -6,6 +6,10 @@ export interface UserProfile {
   email: string;
   goal?: string;
   weightTarget?: number;
+  /** Objectif de sommeil en heures par nuit. */
+  sleepTargetH?: number;
+  /** Objectif de protéines en grammes par jour. */
+  proteinTargetG?: number;
   heightCm?: number;
   /** Nom personnalisé du coach (affiché dans le chat). Défaut: "Coach". */
   coachName?: string;

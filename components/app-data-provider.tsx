@@ -36,8 +36,11 @@ interface AppDataContextValue {
 
   saveProfile: (patch: Partial<UserProfile>) => Promise<void>;
   addWeight: (entry: Omit<WeightEntry, "id" | "createdAt">) => Promise<string>;
+  updateWeight: (id: string, patch: Partial<Omit<WeightEntry, "id" | "createdAt">>) => Promise<void>;
   addSleep: (entry: Omit<SleepEntry, "id" | "createdAt">) => Promise<string>;
+  updateSleep: (id: string, patch: Partial<Omit<SleepEntry, "id" | "createdAt">>) => Promise<void>;
   addMeal: (entry: Omit<MealEntry, "id" | "createdAt">) => Promise<string>;
+  removeMeal: (id: string) => Promise<void>;
   addSession: (entry: Omit<SessionEntry, "id" | "createdAt">) => Promise<string>;
   updateSession: (id: string, patch: Partial<Omit<SessionEntry, "id" | "createdAt">>) => Promise<void>;
   upsertDayLog: (entry: Omit<DayLog, "id" | "createdAt"> & { id?: string }) => Promise<string>;
@@ -154,8 +157,11 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         setProfile((current) => ({ ...(current ?? { id, name: "", email: "", createdAt: new Date().toISOString() }), ...patch }));
       },
       addWeight: (entry) => createEntry(requireUid(), COLLECTIONS.weights, entry),
+      updateWeight: (id, patch) => updateEntry(requireUid(), COLLECTIONS.weights, id, patch),
       addSleep: (entry) => createEntry(requireUid(), COLLECTIONS.sleep, entry),
+      updateSleep: (id, patch) => updateEntry(requireUid(), COLLECTIONS.sleep, id, patch),
       addMeal: (entry) => createEntry(requireUid(), COLLECTIONS.meals, entry),
+      removeMeal: (id) => deleteEntry(requireUid(), COLLECTIONS.meals, id),
       addSession: (entry) => createEntry(requireUid(), COLLECTIONS.sessions, entry),
       updateSession: (id, patch) => updateEntry(requireUid(), COLLECTIONS.sessions, id, patch),
       upsertDayLog: async ({ id, ...entry }) => {

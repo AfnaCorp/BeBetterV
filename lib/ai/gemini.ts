@@ -7,7 +7,6 @@ import {
 } from "@google/generative-ai";
 
 const TEXT_MODEL = process.env.GEMINI_TEXT_MODEL?.trim() || "gemini-2.5-pro";
-const FAST_MODEL = process.env.GEMINI_FAST_MODEL?.trim() || "gemini-2.5-flash";
 
 // Initialisation paresseuse : la clé n'est lue qu'au premier appel, pas à
 // l'import du module. Sinon `next build` (qui charge ce module pour collecter
@@ -29,42 +28,9 @@ export interface GeminiTurn {
   text: string;
 }
 
-export async function generateText({
-  systemPrompt,
-  history = [],
-  message,
-  fast = false
-}: {
-  systemPrompt: string;
-  history?: GeminiTurn[];
-  message: string;
-  fast?: boolean;
-}): Promise<string> {
-  const model = getClient().getGenerativeModel({
-    model: fast ? FAST_MODEL : TEXT_MODEL,
-    systemInstruction: systemPrompt
-  });
-
-  const contents: Content[] = [
-    ...history.map((turn) => ({
-      role: turn.role,
-      parts: [{ text: turn.text }]
-    })),
-    { role: "user", parts: [{ text: message }] }
-  ];
-
-  const result = await model.generateContent({ contents });
-  return result.response.text();
-}
-
 export interface ToolCallEvent {
   name: string;
   args: Record<string, unknown>;
-}
-
-export interface ToolResultEvent {
-  name: string;
-  response: Record<string, unknown>;
 }
 
 interface RunWithToolsArgs {
@@ -73,7 +39,6 @@ interface RunWithToolsArgs {
   history: GeminiTurn[];
   message: string;
   executeTool: (call: ToolCallEvent) => Promise<Record<string, unknown>>;
-  onToolEvent?: (event: ToolCallEvent | ToolResultEvent) => void;
   maxRounds?: number;
 }
 
@@ -83,7 +48,6 @@ export async function runWithTools({
   history,
   message,
   executeTool,
-  onToolEvent,
   maxRounds = 5
 }: RunWithToolsArgs): Promise<string> {
   const model = getClient().getGenerativeModel({
@@ -123,9 +87,7 @@ export async function runWithTools({
     const responseParts: Part[] = [];
     for (const call of functionCalls) {
       const { name, args } = call.functionCall;
-      onToolEvent?.({ name, args });
       const response = await executeTool({ name, args });
-      onToolEvent?.({ name, response });
       responseParts.push({
         functionResponse: { name, response }
       } as Part);

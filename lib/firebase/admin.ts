@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { applicationDefault, cert, getApps, initializeApp, type App, type ServiceAccount } from "firebase-admin/app";
 import { getAuth, type Auth } from "firebase-admin/auth";
-import { getFirestore, FieldValue, Timestamp, type Firestore } from "firebase-admin/firestore";
+import { getFirestore, FieldValue, type Firestore } from "firebase-admin/firestore";
 
 /**
  * Charge explicitement un service account depuis un fichier ou un JSON inline.
@@ -86,4 +86,4 @@ export const adminDb: Firestore = new Proxy({} as Firestore, {
   }
 });
 
-export { FieldValue, Timestamp };
+export { FieldValue };

@@ -24,11 +24,29 @@ export interface MealEntry extends BaseEntry {
   type?: "petit_dej" | "dej" | "diner" | "snack";
 }
 
+/** Un apport de protéines dans la journée (ajouté au fur et à mesure). */
+export interface ProteinIntake {
+  /** Quantité en grammes. */
+  g: number;
+  /** Libellé optionnel (ex. « shaker », « poulet midi »). */
+  label?: string;
+  /** Horodatage ISO de l'ajout. */
+  at: string;
+  source: EntrySource;
+}
+
 export interface DayLog extends BaseEntry {
   energy: number;
   engagement: number;
   wellbeing?: number;
   meaning?: number;
+  /**
+   * Total de protéines du jour, en grammes. Miroir de la somme de
+   * `proteinEntries` (gardé à plat pour le contexte coach / les requêtes).
+   */
+  proteinG?: number;
+  /** Détail des apports protéines cumulés dans la journée. */
+  proteinEntries?: ProteinIntake[];
   notes?: string;
 }
 

@@ -4,10 +4,7 @@ import {
   deleteDoc,
   deleteField,
   doc,
-  getDoc,
-  getDocs,
   onSnapshot,
-  orderBy,
   query,
   serverTimestamp,
   setDoc,
@@ -33,11 +30,6 @@ export function profileRef(uid: string) {
   return doc(firestore, "users", uid);
 }
 
-export async function readProfile(uid: string) {
-  const snap = await getDoc(profileRef(uid));
-  return snap.exists() ? { id: snap.id, ...(snap.data() as DocumentData) } : null;
-}
-
 /** Souscription live au document profil (`users/{uid}`). */
 export function subscribeProfile<T extends DocumentData>(
   uid: string,
@@ -53,16 +45,6 @@ export function subscribeProfile<T extends DocumentData>(
 
 export async function writeProfile(uid: string, data: DocumentData) {
   await setDoc(profileRef(uid), { ...data, updatedAt: serverTimestamp() }, { merge: true });
-}
-
-export async function listAll<T extends DocumentData>(
-  uid: string,
-  name: string,
-  ...constraints: QueryConstraint[]
-): Promise<WithId<T>[]> {
-  const q = query(userCol(uid, name), ...constraints);
-  const snap = await getDocs(q);
-  return snap.docs.map((d) => ({ id: d.id, ...(d.data() as T) }));
 }
 
 export function subscribe<T extends DocumentData>(
@@ -134,6 +116,3 @@ export async function clearField(
 ): Promise<void> {
   await updateDoc(userDoc(uid, name, id), { [field]: deleteField(), updatedAt: serverTimestamp() });
 }
-
-export const orderByDateDesc = orderBy("date", "desc");
-export const orderByCreatedAsc = orderBy("createdAt", "asc");

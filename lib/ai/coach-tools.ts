@@ -101,7 +101,7 @@ export const coachToolDeclarations: FunctionDeclaration[] = [
   {
     name: "log_day",
     description:
-      "Enregistre les notes de bien-être de la journée (énergie, engagement, bien-être, sens). Upsert par date — tu peux fournir uniquement les champs mentionnés par l'utilisateur, les autres restent inchangés.",
+      "Enregistre les notes de bien-être de la journée (énergie, engagement, bien-être, sens) et/ou ajoute un apport de protéines. Upsert par date — tu peux fournir uniquement les champs mentionnés par l'utilisateur, les autres restent inchangés.",
     parameters: {
       type: SchemaType.OBJECT,
       properties: {
@@ -110,6 +110,12 @@ export const coachToolDeclarations: FunctionDeclaration[] = [
         engagement: { type: SchemaType.NUMBER, description: "Engagement / motivation 1 à 5. Optionnel." },
         wellbeing: { type: SchemaType.NUMBER, description: "Bien-être émotionnel 1 à 5. Optionnel." },
         meaning: { type: SchemaType.NUMBER, description: "Sens / sentiment d'utilité de la journée 1 à 5. Optionnel." },
+        proteinG: {
+          type: SchemaType.NUMBER,
+          description:
+            "Apport de protéines à AJOUTER au total du jour, en grammes (ex. l'utilisateur dit 'j'ai pris un shaker 30g'). Cumulatif : chaque appel ajoute un apport, ne remplace pas le total."
+        },
+        proteinLabel: { type: SchemaType.STRING, description: "Libellé de l'apport protéines (ex. 'shaker', 'poulet midi'). Optionnel." },
         notes: { type: SchemaType.STRING, description: "Note libre, optionnel." }
       },
       required: ["date"]
