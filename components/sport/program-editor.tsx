@@ -234,10 +234,13 @@ function ExerciseRow({
 function ExerciseBankPicker({
   existingIds,
   onPick,
+  onCreate,
   onClose,
 }: {
   existingIds: string[];
   onPick: (def: ExerciseDef) => void;
+  /** Crée un exercice libre (hors banque) — propre au programme de l'utilisateur. */
+  onCreate: (name: string) => void;
   onClose: () => void;
 }) {
   const [query, setQuery] = useState("");
@@ -252,6 +255,12 @@ function ExerciseBankPicker({
     }
     return list;
   }, [query, group]);
+
+  // Proposer la création si le texte saisi ne correspond exactement à aucun exo
+  // de la banque (recherche par nom, insensible casse/accents simplifiée).
+  const q = query.trim();
+  const exactMatch = results.some((e) => e.name.toLowerCase() === q.toLowerCase());
+  const canCreate = q.length > 0 && !exactMatch;
 
   return (
     <div className="fixed inset-0 z-[90] flex flex-col justify-end" role="dialog" aria-modal="true">
@@ -301,6 +310,27 @@ function ExerciseBankPicker({
         </div>
 
         <div className="mt-3 flex-1 space-y-1 overflow-y-auto px-3 pb-2">
+          {/* Création d'un exo libre (hors banque) : suivi musculaire indisponible
+              pour cet exo, mais il est persisté dans le programme de l'utilisateur. */}
+          {canCreate && (
+            <button
+              onClick={() => onCreate(q)}
+              className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left transition hover:bg-muted/40"
+            >
+              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-accent-gradient text-white">
+                <Plus className="h-4 w-4" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium text-foreground">
+                  Créer «&nbsp;{q}&nbsp;»
+                </span>
+                <span className="block truncate text-[11px] text-muted-foreground">
+                  Exercice perso (pas de suivi musculaire)
+                </span>
+              </span>
+            </button>
+          )}
+
           {results.map((def) => {
             const already = existing.has(def.id);
             const groups = Array.from(new Set(def.primary.map((m) => MUSCLE_GROUP_LABELS[MUSCLE_TO_GROUP[m]])));
@@ -325,9 +355,9 @@ function ExerciseBankPicker({
             );
           })}
 
-          {results.length === 0 && (
+          {results.length === 0 && !canCreate && (
             <p className="px-3 py-8 text-center text-sm text-muted-foreground">
-              Aucun exercice trouvé pour cette recherche.
+              Tape un nom d&apos;exercice pour le créer.
             </p>
           )}
         </div>
@@ -361,6 +391,24 @@ function SessionBlock({
       exercises: [
         ...session.exercises.filter((e) => e.name.trim()), // purge les lignes vides
         { name: def.name, exerciseId: def.id, targetSets: 3, targetReps: 10 },
+      ],
+    });
+    setOpen(true);
+  }
+
+  /**
+   * Ajoute un exercice LIBRE (hors banque) : pas d'exerciseId, donc pas de suivi
+   * musculaire, mais il est persisté dans le programme — propre à l'utilisateur.
+   */
+  function addCustom(name: string) {
+    const clean = name.trim();
+    if (!clean) return;
+    onChange({
+      ...session,
+      rest: false,
+      exercises: [
+        ...session.exercises.filter((e) => e.name.trim()),
+        { name: clean, targetSets: 3, targetReps: 10 },
       ],
     });
     setOpen(true);
@@ -501,6 +549,10 @@ function SessionBlock({
           existingIds={session.exercises.map((e) => e.exerciseId).filter(Boolean) as string[]}
           onPick={(def) => {
             addFromBank(def);
+            setPicking(false);
+          }}
+          onCreate={(name) => {
+            addCustom(name);
             setPicking(false);
           }}
           onClose={() => setPicking(false)}
