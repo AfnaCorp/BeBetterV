@@ -31,24 +31,53 @@ export async function POST(request: Request) {
       createdAt: FieldValue.serverTimestamp()
     });
 
-    const { answer, writes } = await askCoach({ uid, message, history, context });
+    // Réponse en streaming (SSE) : on émet les étapes (tool calls) au fil de l'eau,
+    // puis un événement final `done` avec la réponse et les écritures.
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        const send = (event: string, data: unknown) => {
+          controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+        };
+        try {
+          const { answer, writes } = await askCoach({
+            uid,
+            message,
+            history,
+            context,
+            onStep: (label) => send("step", { label })
+          });
 
-    const finalAnswer = answer && answer.trim()
-      ? answer
-      : writes.length
-        ? writes.map((w) => w.summary).join(" · ")
-        : "Je n'ai pas su répondre — peux-tu reformuler ?";
+          const finalAnswer = answer && answer.trim()
+            ? answer
+            : writes.length
+              ? writes.map((w) => w.summary).join(" · ")
+              : "Je n'ai pas su répondre — peux-tu reformuler ?";
 
-    console.log("[coach] answer length:", answer?.length ?? 0, "writes:", writes.length);
+          await userCol("messages").add({
+            role: "assistant",
+            content: finalAnswer,
+            ...(writes.length ? { writes } : {}),
+            createdAt: FieldValue.serverTimestamp()
+          });
 
-    await userCol("messages").add({
-      role: "assistant",
-      content: finalAnswer,
-      ...(writes.length ? { writes } : {}),
-      createdAt: FieldValue.serverTimestamp()
+          send("done", { answer: finalAnswer, writes });
+        } catch (err) {
+          console.error("/api/coach stream error", err);
+          send("error", { error: err instanceof Error ? err.message : "Erreur" });
+        } finally {
+          controller.close();
+        }
+      }
     });
 
-    return NextResponse.json({ answer: finalAnswer, writes });
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive"
+      }
+    });
   } catch (error) {
     console.error("/api/coach error", error);
     const message = error instanceof Error ? error.message : "Unknown error";

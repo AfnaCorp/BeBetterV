@@ -18,6 +18,47 @@ import type { ChatMessage, WriteRecord } from "@/types";
 const GREETING_TEXT = "Bonjour, comment puis-je vous aider aujourd'hui ?";
 const PAGE_SIZE = 10;
 
+interface CoachStreamResult {
+  answer?: string;
+  writes?: WriteRecord[];
+  error?: string;
+}
+
+/**
+ * Lit le flux SSE de /api/coach. Appelle `onStep` à chaque étape de l'agent et
+ * renvoie le résultat final (réponse + écritures), ou une erreur.
+ */
+async function readCoachStream(
+  body: ReadableStream<Uint8Array>,
+  onStep: (label: string) => void
+): Promise<CoachStreamResult> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let result: CoachStreamResult = {};
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    // Les événements SSE sont séparés par une ligne vide.
+    const chunks = buffer.split("\n\n");
+    buffer = chunks.pop() ?? "";
+    for (const chunk of chunks) {
+      const line = chunk.split("\n");
+      const event = line.find((l) => l.startsWith("event:"))?.slice(6).trim();
+      const dataRaw = line.find((l) => l.startsWith("data:"))?.slice(5).trim();
+      if (!event || !dataRaw) continue;
+      const data = JSON.parse(dataRaw);
+      if (event === "step") onStep(data.label as string);
+      else if (event === "done") result = { answer: data.answer, writes: data.writes };
+      else if (event === "error") result = { error: data.error };
+    }
+  }
+  return result;
+}
+
 // `createdAt` peut être une string ISO, un Timestamp Firestore, ou absent.
 // On normalise vers une clé jour `YYYY-MM-DD`, en retombant sur aujourd'hui
 // pour toute valeur invalide (sinon `toISOString()` lève RangeError).
@@ -40,7 +81,17 @@ function dayKeyOf(createdAt: unknown): string {
   return Number.isNaN(date.getTime()) ? todayISODate() : toISODate(date);
 }
 
-export function CoachChat({ variant = "page" }: { variant?: "page" | "floating" } = {}) {
+const ONBOARD_PROGRAM_TEXT =
+  "J'ai accès à toutes tes données et je peux tout modifier pour toi. On crée ton programme d'entraînement ensemble ? Dis-moi tes objectifs (prise de masse, sèche, force, remise en forme…) et combien de jours par semaine tu peux t'entraîner.";
+
+export function CoachChat({
+  variant = "page",
+  onboardProgram = false,
+}: {
+  variant?: "page" | "floating";
+  /** Ouverture en mode « création de programme » : affiche un message d'amorce. */
+  onboardProgram?: boolean;
+} = {}) {
   const { messages, profile, weights, sleep, meals, sessions, dayLogs, habits, facts, wiki, programs } = useAppData();
   const { user } = useAuth();
   const router = useRouter();
@@ -48,6 +99,8 @@ export function CoachChat({ variant = "page" }: { variant?: "page" | "floating" 
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Étape « en cours » de l'agent (dernier tool call), affichée pendant le loading.
+  const [step, setStep] = useState<string | null>(null);
   const [pending, setPending] = useState<ChatMessage[]>([]);
   // Nombre de messages des jours précédents dévoilés, par tranches de PAGE_SIZE.
   const [revealedOlder, setRevealedOlder] = useState(0);
@@ -81,12 +134,12 @@ export function CoachChat({ variant = "page" }: { variant?: "page" | "floating" 
   const hasMessagesToday = todayMessages.length > 0;
   const greeting = useMemo<ChatMessage>(
     () => ({
-      id: "daily-greeting",
+      id: onboardProgram ? "onboard-program-greeting" : "daily-greeting",
       role: "assistant",
-      content: GREETING_TEXT,
+      content: onboardProgram ? ONBOARD_PROGRAM_TEXT : GREETING_TEXT,
       createdAt: new Date().toISOString()
     }),
-    []
+    [onboardProgram]
   );
 
   const visibleMessages = useMemo<ChatMessage[]>(() => {
@@ -94,8 +147,11 @@ export function CoachChat({ variant = "page" }: { variant?: "page" | "floating" 
     const shownOlder =
       revealedOlder > 0 ? olderMessages.slice(olderMessages.length - revealedOlder) : [];
     const base = [...shownOlder, ...todayMessages];
+    // Mode onboarding programme : le message d'amorce s'affiche toujours en bas,
+    // même si une conversation a déjà eu lieu aujourd'hui.
+    if (onboardProgram) return [...base, greeting];
     return hasMessagesToday ? base : [greeting, ...base];
-  }, [olderMessages, todayMessages, revealedOlder, hasMessagesToday, greeting]);
+  }, [olderMessages, todayMessages, revealedOlder, hasMessagesToday, greeting, onboardProgram]);
 
   const revealOlder = () => {
     setRevealedOlder((n) => Math.min(olderMessages.length, n + PAGE_SIZE));
@@ -115,7 +171,7 @@ export function CoachChat({ variant = "page" }: { variant?: "page" | "floating" 
   // d'historique gère son propre scroll dans revealOlder).
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [allMessages.length, loading]);
+  }, [allMessages.length, loading, step]);
 
   const submit = async (event?: FormEvent) => {
     event?.preventDefault();
@@ -161,16 +217,19 @@ export function CoachChat({ variant = "page" }: { variant?: "page" | "floating" 
         })
       });
 
-      if (!response.ok) {
+      if (!response.ok || !response.body) {
         const { error: errMsg } = await response.json().catch(() => ({ error: "Erreur" }));
         throw new Error(errMsg ?? "Erreur");
       }
 
-      const data: { answer: string; writes?: WriteRecord[] } = await response.json();
+      // Lecture du flux SSE : événements `step` (étapes), puis `done` (réponse).
+      const data = await readCoachStream(response.body, (label) => setStep(label));
+      if (data.error) throw new Error(data.error);
+
       const assistantLocal: ChatMessage = {
         id: `local-assistant-${Date.now()}`,
         role: "assistant",
-        content: data.answer,
+        content: data.answer ?? "",
         ...(data.writes && data.writes.length ? { writes: data.writes } : {}),
         createdAt: new Date().toISOString()
       };
@@ -194,6 +253,7 @@ export function CoachChat({ variant = "page" }: { variant?: "page" | "floating" 
       setPending((p) => p.filter((m) => m.id !== userLocal.id));
     } finally {
       setLoading(false);
+      setStep(null);
     }
   };
 
@@ -278,20 +338,33 @@ export function CoachChat({ variant = "page" }: { variant?: "page" | "floating" 
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
           >
-            <div className="neu-surface-sm flex items-center gap-1.5 rounded-2xl px-4 py-3.5">
-              {[0, 1, 2].map((i) => (
+            <div className="neu-surface-sm flex items-center gap-2.5 rounded-2xl px-4 py-3.5">
+              <span className="flex items-center gap-1.5">
+                {[0, 1, 2].map((i) => (
+                  <motion.span
+                    key={i}
+                    className="h-2 w-2 rounded-full bg-accent-gradient"
+                    animate={{ opacity: [0.3, 1, 0.3], y: [0, -3, 0] }}
+                    transition={{
+                      duration: 1,
+                      repeat: Infinity,
+                      ease: "easeInOut",
+                      delay: i * 0.16
+                    }}
+                  />
+                ))}
+              </span>
+              {/* Étape en cours de l'agent (recherche d'exos, écriture…) si connue. */}
+              {step && (
                 <motion.span
-                  key={i}
-                  className="h-2 w-2 rounded-full bg-accent-gradient"
-                  animate={{ opacity: [0.3, 1, 0.3], y: [0, -3, 0] }}
-                  transition={{
-                    duration: 1,
-                    repeat: Infinity,
-                    ease: "easeInOut",
-                    delay: i * 0.16
-                  }}
-                />
-              ))}
+                  key={step}
+                  initial={{ opacity: 0, x: -4 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  className="text-xs font-medium text-muted-foreground"
+                >
+                  {step}
+                </motion.span>
+              )}
             </div>
           </motion.div>
         )}

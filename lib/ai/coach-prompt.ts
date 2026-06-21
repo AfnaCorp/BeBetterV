@@ -23,6 +23,13 @@ Programmes d'entraînement (onglet Sport) :
 - Pour noter ou planifier une SÉANCE un jour donné → log_session. UPSERT PAR JOUR : si une séance existe déjà ce jour-là pour la même séance de programme (programSessionId) ou le même titre, tes exercices sont fusionnés dedans (un exercice de même nom est remplacé, les autres ajoutés), sinon une nouvelle séance est créée. Pour rattacher à la séance planifiée du jour, fournis son programSessionId (depuis programs.sessions[].id, ou recent.sessions[].programSessionId). N'envoie que les exercices à ajouter/modifier.
 - STATUT (paramètre done) : par DÉFAUT done=false, l'exercice est ajouté EN À-FAIRE (non coché). Ne mets done=true QUE si l'utilisateur indique clairement avoir déjà réalisé l'exercice ("j'ai fait des dips", "séance finie", "réalisé 3x10"). Si l'utilisateur dit seulement "ajoute / mets / prévois tel exercice", laisse done=false : il pourra le cocher lui-même dans l'app.
 
+CRÉATION GUIDÉE D'UN PROGRAMME (onboarding) :
+- Tu sais s'il y a déjà un programme : le contexte 'programs' est vide quand l'utilisateur n'en a aucun. Dans ce cas, propose-lui de le construire ensemble.
+- Déroulé : (1) demande ses OBJECTIFS (prise de masse, sèche, force, santé…), sa fréquence (combien de jours/semaine il peut s'entraîner) et son matériel/niveau si utile ; (2) si ses réponses sont vagues, fais une PROPOSITION raisonnable et chiffrée plutôt que de le bombarder de questions (ex. débutant 3j/sem → full body ; intermédiaire 4-5j → split) ; (3) AVANT de construire, appelle search_exercises (par groupe musculaire) pour choisir des exercices RÉELS de la banque et récupérer leurs exerciseId ; (4) appelle save_program avec la semaine complète (7 jours, repos compris) et un nom (ex. 'Programme de <prénom>').
+- ÉQUILIBRE : répartis le volume entre groupes (pectoraux, dos, épaules, bras, jambes, core) ; évite de négliger un groupe (surtout jambes et dos). Vise ~10-20 séries hebdo par grand groupe pour l'hypertrophie, moins pour un débutant.
+- Renseigne toujours exerciseId (via search_exercises) pour que le suivi par muscle et l'écran d'équilibrage fonctionnent.
+- Pour mettre un programme EN PAUSE / le RÉACTIVER, ce n'est pas via save_program : explique à l'utilisateur que ça se fait dans l'onglet Sport (un seul programme actif à la fois).
+
 Annulation :
 - Si l'utilisateur dit "annule", "reviens en arrière", "non finalement", "oublie ce que tu viens de faire" juste après une de tes écritures → appelle undo_last. Cela restaure exactement l'état précédent. Une seule action peut être annulée (la dernière). Si l'utilisateur veut défaire quelque chose de plus ancien, utilise update_entry/delete_entry sur l'entrée précise.
 
@@ -121,11 +128,17 @@ export function buildContextPayload(ctx: CoachContext) {
     programs: ctx.programs.map((p) => ({
       id: p.id,
       name: p.name,
-      sessions: p.sessions.map((s) => ({
+      // active=false → programme en pause (ne propose plus de séance). Un seul actif.
+      active: p.active !== false,
+      // Semaine fixe : index 0 = Lundi … 6 = Dimanche.
+      sessions: p.sessions.map((s, i) => ({
         id: s.id,
+        weekday: ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"][i] ?? `Jour ${i + 1}`,
         title: s.title,
+        rest: s.rest === true || s.exercises.length === 0,
         exercises: s.exercises.map((ex) => ({
           name: ex.name,
+          ...(ex.exerciseId ? { exerciseId: ex.exerciseId } : {}),
           targetSets: ex.targetSets,
           targetReps: ex.targetReps,
           ...(ex.targetWeight != null ? { targetWeight: ex.targetWeight } : {})

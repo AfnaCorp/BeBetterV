@@ -20,7 +20,6 @@ import { useAppData } from "@/components/app-data-provider";
 import { CoachWriteBanner } from "@/components/coach/coach-write-banner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { DEFAULT_PROGRAM } from "@/lib/default-program";
 import { getExercise } from "@/lib/exercise-bank";
 import { DateStrip } from "@/components/ui/date-strip";
 import { toISODate } from "@/lib/utils/dates";
@@ -95,9 +94,12 @@ function hasPlannedSession(session: ProgramSession): boolean {
 
 /**
  * Séance planifiée du programme pour un jour donné. Le programme est une semaine
- * fixe : lundi = index 0 … dimanche = index 6, identique chaque semaine.
+ * fixe : lundi = index 0 … dimanche = index 6, identique chaque semaine. Un
+ * programme désactivé (`active === false`) ne propose plus aucune séance — son
+ * historique déjà enregistré reste affiché par ailleurs (séances réalisées).
  */
 function plannedFor(program: ProgramTemplate, day: Date): ProgramSession | undefined {
+  if (program.active === false) return undefined;
   const idx = (day.getDay() + 6) % 7; // 0 = lundi
   const s = program.sessions[idx];
   return s && hasPlannedSession(s) ? s : undefined;
@@ -794,7 +796,7 @@ function buildInitial(
 
 export default function SportPage() {
   const router = useRouter();
-  const { addSession, updateSession, addProgram, programs, sessions, ready } = useAppData();
+  const { addSession, updateSession, programs, sessions } = useAppData();
   const [active, setActive] = useState<{ programId: string; session: ProgramSession; programName: string } | null>(null);
   // Id Firestore de la SessionEntry par clé `jour|programSessionId`. Évite de créer
   // plusieurs entrées pour un même jour pendant que `sessions` (temps réel) se met à
@@ -802,12 +804,6 @@ export default function SportPage() {
   const dayEntryIds = useRef<Map<string, string>>(new Map());
   // Sérialise les upserts pour éviter une course création/mise à jour sur le même jour.
   const persistChain = useRef<Promise<unknown>>(Promise.resolve());
-
-  useEffect(() => {
-    if (ready && programs.length === 0) {
-      addProgram(DEFAULT_PROGRAM);
-    }
-  }, [ready, programs.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleStartSession(session: ProgramSession, program: ProgramTemplate) {
     setActive({ programId: program.id, session, programName: program.name });
@@ -877,13 +873,22 @@ export default function SportPage() {
     if (activeProgram) return renderSession(activeProgram, active.session, false, isoDay(new Date()));
   }
 
-  const program = programs[0];
+  // Programme affiché dans la frise : le programme actif (un seul à la fois), à
+  // défaut le premier. La gestion / le choix des programmes se fait dans /sport/edit.
+  const program = programs.find((p) => p.active !== false) ?? programs[0];
 
   return (
     <div className="space-y-6">
       <CoachWriteBanner route="/sport" />
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-foreground">Sport</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-semibold text-foreground">Sport</h1>
+          {program?.active === false && (
+            <span className="flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+              <Moon className="h-3 w-3" /> En pause
+            </span>
+          )}
+        </div>
         {program && (
           <button
             onClick={() => router.push(`/sport/edit?id=${program.id}`)}

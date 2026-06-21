@@ -57,6 +57,26 @@ export function onOpenCoach(handler: () => void): () => void {
   return () => window.removeEventListener(OPEN_COACH_EVENT, handler);
 }
 
+const COACH_HINT_EVENT = "coach-hint";
+
+/**
+ * Petite bulle d'incitation qui « sort » du coach flottant (ex. proposer de
+ * remplir un programme à la place de l'utilisateur). `message` null = masquer.
+ * Une page monte le hint à l'affichage et le retire au démontage.
+ */
+export function setCoachHint(message: string | null) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(COACH_HINT_EVENT, { detail: message }));
+}
+
+/** S'abonne aux hints du coach. Retourne la fonction de cleanup. */
+export function onCoachHint(handler: (message: string | null) => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  const listener = (e: Event) => handler((e as CustomEvent<string | null>).detail);
+  window.addEventListener(COACH_HINT_EVENT, listener);
+  return () => window.removeEventListener(COACH_HINT_EVENT, listener);
+}
+
 /** Vibration haptique courte (mobile). Sans effet sur desktop / iOS Safari. */
 export function hapticPulse() {
   if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {

@@ -3,6 +3,7 @@
 import { motion, useReducedMotion } from "framer-motion";
 import type { ChatMessage } from "@/types";
 import { cn } from "@/lib/utils/cn";
+import { Markdown } from "./markdown";
 
 export function MessageBubble({ message }: { message: ChatMessage }) {
   const isUser = message.role === "user";
@@ -21,11 +22,13 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
     >
       <div
         className={cn(
-          "max-w-[88%] whitespace-pre-line rounded-2xl px-4 py-3 text-sm leading-6 md:max-w-[74%]",
-          isUser ? "bg-accent-gradient text-white" : "neu-surface-sm text-foreground"
+          "max-w-[88%] rounded-2xl px-4 py-3 text-sm leading-6 md:max-w-[74%]",
+          // Messages user : texte brut (préserve les retours à la ligne). Coach :
+          // rendu Markdown (gras, listes, titres légers).
+          isUser ? "whitespace-pre-line bg-accent-gradient text-white" : "neu-surface-sm text-foreground"
         )}
       >
-        {message.content}
+        {isUser ? message.content : <Markdown content={message.content} />}
         {message.writes && message.writes.length > 0 && (
           <div className="mt-3 space-y-1 border-t border-foreground/10 pt-2 text-xs text-muted-foreground">
             {message.writes.map((w, i) => (

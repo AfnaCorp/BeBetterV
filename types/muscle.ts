@@ -67,7 +67,7 @@ export const MUSCLE_GROUP_LABELS: Record<MuscleGroup, string> = {
   shoulders: "Épaules",
   back: "Dos",
   arms: "Bras",
-  core: "Abdos / Gainage",
+  core: "Abdos",
   legs: "Jambes",
 };
 

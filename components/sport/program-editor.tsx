@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import {
   Dumbbell,
   Plus,
@@ -11,9 +11,11 @@ import {
   ArrowDown,
   Moon,
   ChevronLeft,
+  ChevronRight,
   Minus,
   Search,
   Repeat,
+  Power,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -457,7 +459,7 @@ function SessionBlock({
           </div>
 
           <Input
-            className="neu-inset rounded-xl border-none px-3 text-sm font-medium shadow-none focus-visible:ring-0"
+            className="neu-inset rounded-xl border-none px-3 text-sm font-medium shadow-none focus-visible:ring-0 placeholder:italic placeholder:text-muted-foreground/60"
             placeholder={isRest ? "Nom (optionnel — ex: Cardio léger…)" : "Nom de la séance (ex: Push A)"}
             value={session.title}
             onChange={(e) => onChange({ ...session, title: e.target.value })}
@@ -562,17 +564,154 @@ function WeeklyMuscleSummary({ sessions }: { sessions: ProgramSession[] }) {
   );
 }
 
+/**
+ * Étape 1 du wizard de création : on coche les jours d'entraînement de la semaine.
+ * Les jours décochés deviennent des jours de repos.
+ */
+function DayPickerStep({
+  name,
+  onName,
+  trainingDays,
+  onToggle,
+  onContinue,
+  onCancel,
+}: {
+  name: string;
+  onName: (v: string) => void;
+  /** Indices (0=Lundi…6=Dimanche) des jours d'entraînement cochés. */
+  trainingDays: Set<number>;
+  onToggle: (idx: number) => void;
+  onContinue: () => void;
+  onCancel: () => void;
+}) {
+  const count = trainingDays.size;
+  return (
+    <div className="flex min-h-[100dvh] flex-col">
+      <header className="sticky top-0 z-20 -mx-4 flex items-center gap-2 border-b border-border/50 bg-background/85 px-4 py-3 backdrop-blur sm:-mx-5 sm:px-5">
+        <button
+          onClick={onCancel}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          aria-label="Annuler la création"
+        >
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl neu-pressable text-muted-foreground">
+            <ChevronLeft className="h-5 w-5" />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              Étape 1 / 2
+            </span>
+            <span className="block truncate text-sm font-semibold text-foreground">
+              Nouveau programme
+            </span>
+          </span>
+        </button>
+      </header>
+
+      <div className="space-y-6 py-6 pb-28">
+        {/* Nom du programme */}
+        <div className="relative overflow-hidden rounded-3xl neu-surface pl-1.5">
+          <span className="absolute inset-y-0 left-0 w-1.5 bg-accent-gradient" aria-hidden />
+          <div className="flex items-start gap-3 p-4">
+            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-accent-gradient text-white shadow-sm">
+              <Dumbbell className="h-5 w-5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Nom du programme
+              </label>
+              <Input
+                autoFocus
+                className="neu-inset h-auto rounded-xl border-none px-3 py-2 text-lg font-bold shadow-none focus-visible:ring-0 placeholder:font-normal placeholder:italic placeholder:text-muted-foreground/60"
+                placeholder="ex: PPL, Full Body…"
+                value={name}
+                onChange={(e) => onName(e.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Choix des jours d'entraînement */}
+        <div>
+          <p className="mb-1 px-1 text-base font-semibold text-foreground">
+            Quels jours t&apos;entraînes-tu&nbsp;?
+          </p>
+          <p className="mb-4 px-1 text-sm text-muted-foreground">
+            Coche les jours où tu peux faire du sport. Les autres seront des jours de repos.
+          </p>
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+            {WEEKDAYS.map((day, i) => {
+              const on = trainingDays.has(i);
+              return (
+                <button
+                  key={day}
+                  onClick={() => onToggle(i)}
+                  className={`flex items-center gap-3 rounded-2xl px-3.5 py-3 text-left transition ${
+                    on ? "bg-accent-gradient text-white shadow-sm" : "neu-surface-sm text-foreground"
+                  }`}
+                  aria-pressed={on}
+                >
+                  <span
+                    className={`grid h-6 w-6 shrink-0 place-items-center rounded-lg border-2 transition ${
+                      on ? "border-white bg-white/20" : "border-muted"
+                    }`}
+                  >
+                    {on && <Check className="h-4 w-4" />}
+                  </span>
+                  <span className="text-sm font-semibold">{day}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      <div className="fixed inset-x-3 bottom-[6.25rem] z-40 flex items-center gap-3 rounded-2xl neu-surface px-4 py-2.5 lg:inset-x-auto lg:bottom-6 lg:right-6 lg:w-auto">
+        <span className="flex-1 text-sm text-muted-foreground lg:flex-none lg:pr-2">
+          {count === 0
+            ? "Choisis au moins un jour"
+            : `${count} jour${count > 1 ? "s" : ""} d'entraînement`}
+        </span>
+        <Button
+          size="lg"
+          onClick={onContinue}
+          disabled={count === 0 || !name.trim()}
+        >
+          Continuer <ChevronRight className="ml-1.5 h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export type ProgramDraftValue = Omit<ProgramTemplate, "id" | "createdAt">;
 
 export function ProgramEditor({
   initial,
+  isActive = false,
+  canActivate = false,
+  onActivate,
+  tabs,
   onSave,
   onCancel,
 }: {
   initial: ProgramDraftValue;
+  /** Onglets de programmes, rendus sous le bandeau « Retour ». */
+  tabs?: ReactNode;
+  /** Le programme édité est-il celui actuellement actif (propose les séances) ? */
+  isActive?: boolean;
+  /** Peut-on l'activer (programme déjà enregistré) ? Faux pendant la création. */
+  canActivate?: boolean;
+  /** Active ce programme (et met les autres en pause). */
+  onActivate?: () => void;
   onSave: (draft: ProgramDraftValue) => void;
   onCancel: () => void;
 }) {
+  // Mode création (aucune séance pré-existante) → wizard guidé en 2 étapes :
+  // d'abord le choix des jours, puis le remplissage. En édition, on va direct
+  // à l'éditeur complet.
+  const isCreation = initial.sessions.length === 0;
+  const [step, setStep] = useState<"days" | "fill">(isCreation ? "days" : "fill");
+
   // Programme = semaine fixe de 7 jours (Lundi…Dimanche). On normalise le draft
   // pour toujours avoir exactement 7 sessions, dans l'ordre des jours.
   const makeInitial = (): ProgramDraftValue => {
@@ -588,6 +727,26 @@ export function ProgramEditor({
   // pour n'afficher la barre Enregistrer/Annuler que quand il y a quelque chose à sauver.
   const [baseline] = useState(() => JSON.stringify(makeInitial()));
   const dirty = useMemo(() => JSON.stringify(draft) !== baseline, [draft, baseline]);
+
+  // Wizard (étape 1) : jours d'entraînement cochés (0=Lundi…6=Dimanche).
+  const [pickedDays, setPickedDays] = useState<Set<number>>(new Set());
+
+  function togglePickedDay(idx: number) {
+    setPickedDays((prev) => {
+      const next = new Set(prev);
+      next.has(idx) ? next.delete(idx) : next.add(idx);
+      return next;
+    });
+  }
+
+  /** Applique les jours cochés au draft (entraînement ⇄ repos) et passe au remplissage. */
+  function commitDays() {
+    setDraft((d) => ({
+      ...d,
+      sessions: d.sessions.map((s, i) => ({ ...s, rest: !pickedDays.has(i) })),
+    }));
+    setStep("fill");
+  }
 
   function updateSession(i: number, s: ProgramSession) {
     setDraft((d) => {
@@ -614,28 +773,46 @@ export function ProgramEditor({
   const trainingDays = draft.sessions.filter((s) => !isRestDay(s)).length;
   const canSave = dirty && !!draft.name.trim();
 
+  // Étape 1 du wizard (création) : choix des jours d'entraînement.
+  if (step === "days") {
+    return (
+      <DayPickerStep
+        name={draft.name}
+        onName={(v) => setDraft((d) => ({ ...d, name: v }))}
+        trainingDays={pickedDays}
+        onToggle={togglePickedDay}
+        onContinue={commitDays}
+        onCancel={onCancel}
+      />
+    );
+  }
+
   return (
     <div className="flex min-h-[100dvh] flex-col">
-      {/* Header sticky : retour explicite vers la vue jour par jour */}
+      {/* Header sticky : en création, le retour revient à l'étape 1 (choix des
+          jours) ; en édition, il ramène au suivi jour par jour. */}
       <header className="sticky top-0 z-20 -mx-4 flex items-center gap-2 border-b border-border/50 bg-background/85 px-4 py-3 backdrop-blur sm:-mx-5 sm:px-5">
         <button
-          onClick={onCancel}
+          onClick={isCreation ? () => setStep("days") : onCancel}
           className="flex min-w-0 flex-1 items-center gap-2 text-left"
-          aria-label="Retour au suivi jour par jour"
+          aria-label={isCreation ? "Revenir au choix des jours" : "Retour au suivi jour par jour"}
         >
           <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl neu-pressable text-muted-foreground">
             <ChevronLeft className="h-5 w-5" />
           </span>
           <span className="min-w-0">
             <span className="block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              Retour
+              {isCreation ? "Étape 2 / 2" : "Retour"}
             </span>
             <span className="block truncate text-sm font-semibold text-foreground">
-              Suivi jour par jour
+              {isCreation ? "Nomme & remplis tes séances" : "Suivi jour par jour"}
             </span>
           </span>
         </button>
       </header>
+
+      {/* Onglets de programmes, juste sous le bandeau « Retour ». */}
+      {tabs && <div className="pt-3">{tabs}</div>}
 
       <div className="py-5 pb-28">
         {/* Carte englobante : tout ce qui suit appartient à CE programme. La barre
@@ -650,11 +827,28 @@ export function ProgramEditor({
               <Dumbbell className="h-5 w-5" />
             </span>
             <div className="min-w-0 flex-1">
-              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                Nom du programme
-              </label>
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <label className="block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Nom du programme
+                </label>
+                {/* Statut d'activation, discret. En pause → bouton « Activer » inline. */}
+                {canActivate &&
+                  (isActive ? (
+                    <span className="flex shrink-0 items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-green-600">
+                      <span className="h-1.5 w-1.5 rounded-full bg-green-500" /> Actif
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={onActivate}
+                      className="flex shrink-0 items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground transition hover:text-primary"
+                    >
+                      <Power className="h-3 w-3" /> Activer
+                    </button>
+                  ))}
+              </div>
               <Input
-                className="h-auto border-none bg-transparent p-0 text-lg font-bold shadow-none focus-visible:ring-0"
+                className="neu-inset h-auto rounded-xl border-none px-3 py-2 text-lg font-bold shadow-none focus-visible:ring-0 placeholder:font-normal placeholder:italic placeholder:text-muted-foreground/60"
                 placeholder="ex: PPL, Full Body…"
                 value={draft.name}
                 onChange={(e) => setDraft({ ...draft, name: e.target.value })}
@@ -688,7 +882,9 @@ export function ProgramEditor({
                     key={s.id}
                     dayLabel={WEEKDAYS[i]}
                     session={s}
-                    defaultOpen={false}
+                    // En création (sortie de wizard), on déplie les jours d'entraînement
+                    // pour que l'utilisateur les nomme et les remplisse directement.
+                    defaultOpen={isCreation && !isRestDay(s)}
                     onChange={(updated) => updateSession(i, updated)}
                   />
                 ))}

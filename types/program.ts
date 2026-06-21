@@ -29,6 +29,12 @@ export interface ProgramTemplate {
   sessions: ProgramSession[];
   createdAt: string;
   updatedAt?: string;
+  /**
+   * Programme actif. Absent ou `true` = actif (rétro-compat). Quand `false`, le
+   * programme ne propose plus de séance pour les jours à venir, mais les séances
+   * déjà enregistrées (historique) restent affichées. Réversible.
+   */
+  active?: boolean;
   /** Séance en cours non terminée, sauvegardée automatiquement pour reprise. */
   draft?: ProgramDraft;
 }

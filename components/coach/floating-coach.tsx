@@ -5,7 +5,7 @@ import { MessageCircle, X } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
 import { useAppData } from "@/components/app-data-provider";
 import { DEFAULT_COACH_NAME } from "@/lib/coach-avatars";
-import { onOpenCoach } from "@/lib/coach-feedback";
+import { onOpenCoach, onCoachHint } from "@/lib/coach-feedback";
 import { CoachAvatarBadge } from "./coach-avatar";
 import { CoachChat } from "./coach-chat";
 
@@ -52,6 +52,10 @@ export function FloatingCoach() {
   const [position, setPosition] = useState<Position>({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
   const [open, setOpen] = useState(false);
+  // Bulle d'incitation contextuelle « sortant » du coach (posée par une page).
+  const [hint, setHint] = useState<string | null>(null);
+  // Le coach a-t-il été ouvert via le hint « créer un programme » ? → message d'amorce.
+  const [onboarding, setOnboarding] = useState(false);
   const dragState = useRef<{
     pointerId: number;
     offsetX: number;
@@ -81,6 +85,8 @@ export function FloatingCoach() {
 
   // Ouverture déclenchée depuis ailleurs (ex. bouton "Demander au coach").
   useEffect(() => onOpenCoach(() => setOpen(true)), []);
+  // Hint contextuel posé par une page (ex. création de programme).
+  useEffect(() => onCoachHint(setHint), []);
 
   const persist = useCallback((pos: Position) => {
     try {
@@ -192,7 +198,10 @@ export function FloatingCoach() {
           {isMobile && (
             <div
               className="fixed inset-0 z-[75] bg-foreground/10 backdrop-blur-sm"
-              onClick={() => setOpen(false)}
+              onClick={() => {
+                setOpen(false);
+                setOnboarding(false);
+              }}
               aria-hidden
             />
           )}
@@ -239,7 +248,10 @@ export function FloatingCoach() {
               </div>
               <button
                 type="button"
-                onClick={() => setOpen(false)}
+                onClick={() => {
+                  setOpen(false);
+                  setOnboarding(false);
+                }}
                 aria-label="Fermer le coach"
                 className="grid h-8 w-8 place-items-center rounded-full text-muted-foreground transition hover:text-foreground"
               >
@@ -247,10 +259,54 @@ export function FloatingCoach() {
               </button>
             </div>
             <div className="flex-1 min-h-0">
-              <CoachChat variant="floating" />
+              <CoachChat variant="floating" onboardProgram={onboarding} />
             </div>
           </div>
         </>
+      )}
+
+      {/* Bulle d'incitation contextuelle « sortant » du coach : flottante au-dessus
+          de la bulle, pointe vers elle. Clic = ouvre le coach. */}
+      {hint && !open && !dragging && (
+        <div
+          style={{
+            position: "fixed",
+            zIndex: 89,
+            bottom: window.innerHeight - position.y + PANEL_GAP,
+            [onLeftSide ? "left" : "right"]: onLeftSide
+              ? position.x
+              : window.innerWidth - position.x - BUBBLE_SIZE,
+            maxWidth: Math.min(280, window.innerWidth - 2 * MARGIN),
+            animation: "coachPopIn 220ms cubic-bezier(0.16, 1, 0.3, 1)",
+          }}
+          className="select-none"
+        >
+          <button
+            type="button"
+            onClick={() => {
+              setHint(null);
+              setOnboarding(true);
+              setOpen(true);
+            }}
+            className="relative block rounded-2xl bg-accent-gradient px-3.5 py-2.5 text-left text-[13px] font-medium leading-snug text-white shadow-[0_8px_22px_-8px_rgba(198,74,214,0.6)]"
+          >
+            {hint}
+            {/* Petite pointe vers la bulle, en bas du côté de la bulle */}
+            <span
+              aria-hidden
+              className="absolute -bottom-1 h-3 w-3 rotate-45 rounded-[2px] bg-accent-gradient"
+              style={{ [onLeftSide ? "left" : "right"]: 22 } as React.CSSProperties}
+            />
+          </button>
+          <button
+            type="button"
+            onClick={() => setHint(null)}
+            aria-label="Masquer le message"
+            className="absolute -right-1.5 -top-1.5 grid h-5 w-5 place-items-center rounded-full bg-card text-muted-foreground shadow ring-1 ring-foreground/5"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
       )}
 
       {!open && (

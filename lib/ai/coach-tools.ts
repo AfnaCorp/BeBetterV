@@ -243,7 +243,7 @@ export const coachToolDeclarations: FunctionDeclaration[] = [
   {
     name: "save_program",
     description:
-      "Crée ou remplace un programme d'entraînement (onglet Sport). Fournis le programme ENTIER (toutes les séances et exercices), pas seulement la modification : repars de l'état du contexte 'programs', applique le changement, renvoie le tout. Pour MODIFIER un programme existant, fournis son id ; pour en CRÉER un nouveau, omets l'id. Un jour de repos = une séance avec exercises vide.",
+      "Crée ou remplace un programme d'entraînement (onglet Sport). Le programme est une SEMAINE FIXE de 7 séances, dans l'ordre Lundi (1ʳᵉ) … Dimanche (7ᵉ) ; fournis toujours les 7, un jour sans entraînement étant une séance de repos (rest:true, exercises vide). Fournis le programme ENTIER (toutes les séances et exercices), pas seulement la modification : repars de l'état du contexte 'programs', applique le changement, renvoie le tout. Pour MODIFIER un programme existant, fournis son id ; pour en CRÉER un nouveau, omets l'id. IMPORTANT : pour chaque exercice, fournis l'exerciseId issu de la banque (via l'outil search_exercises) afin que le suivi par muscle et l'équilibrage fonctionnent.",
     parameters: {
       type: SchemaType.OBJECT,
       properties: {
@@ -256,7 +256,8 @@ export const coachToolDeclarations: FunctionDeclaration[] = [
             type: SchemaType.OBJECT,
             properties: {
               id: { type: SchemaType.STRING, description: "Id existant de la séance si connu (le conserver pour ne pas casser le suivi). Sinon laisser vide, il sera généré." },
-              title: { type: SchemaType.STRING, description: "Titre de la séance, ex: 'Jour 1 — Dos' ou 'Repos'." },
+              title: { type: SchemaType.STRING, description: "Titre de la séance, ex: 'Pecs / Bras', 'Dos'. Laisse vide pour un repos." },
+              rest: { type: SchemaType.BOOLEAN, description: "true = jour de repos (exercises vide)." },
               exercises: {
                 type: SchemaType.ARRAY,
                 description: "Exercices cibles. Vide pour un jour de repos.",
@@ -264,6 +265,7 @@ export const coachToolDeclarations: FunctionDeclaration[] = [
                   type: SchemaType.OBJECT,
                   properties: {
                     name: { type: SchemaType.STRING },
+                    exerciseId: { type: SchemaType.STRING, description: "Id de la banque (obtenu via search_exercises). À fournir dès que possible pour le suivi musculaire." },
                     targetSets: { type: SchemaType.NUMBER, description: "Nombre de séries visées." },
                     targetReps: { type: SchemaType.NUMBER, description: "Répétitions visées par série." },
                     targetWeight: { type: SchemaType.NUMBER, description: "Charge cible en kg, optionnel." }
@@ -277,6 +279,23 @@ export const coachToolDeclarations: FunctionDeclaration[] = [
         }
       },
       required: ["name", "sessions"]
+    }
+  },
+  {
+    name: "search_exercises",
+    description:
+      "Recherche dans la banque d'exercices (lecture seule, n'écrit rien). Utilise-le AVANT save_program pour récupérer les exerciseId à utiliser. Filtre par mots-clés et/ou par groupe musculaire. Renvoie une liste {id, name, groups, equipment}.",
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        query: { type: SchemaType.STRING, description: "Mots-clés (nom d'exercice), ex: 'développé', 'curl'. Vide = tous." },
+        group: {
+          type: SchemaType.STRING,
+          format: "enum",
+          enum: ["chest", "back", "shoulders", "arms", "legs", "core"],
+          description: "Grand groupe musculaire pour filtrer."
+        }
+      }
     }
   },
   {

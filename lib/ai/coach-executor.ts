@@ -3,6 +3,14 @@ import { adminDb, FieldValue } from "@/lib/firebase/admin";
 import type { WriteRecord } from "@/types";
 import type { CoachToolName } from "./coach-tools";
 import { toISODate } from "@/lib/utils/dates";
+import {
+  EXERCISE_BY_ID,
+  findExerciseByName,
+  searchExercises,
+  exercisesByGroup,
+} from "@/lib/exercise-bank";
+import { MUSCLE_GROUP_LABELS, MUSCLE_TO_GROUP } from "@/types/muscle";
+import type { MuscleGroup } from "@/types/muscle";
 
 type ToolArgs = Record<string, unknown>;
 
@@ -377,6 +385,7 @@ async function deleteEntryTool(ctx: ExecCtx, args: ToolArgs): Promise<WriteRecor
 
 interface ProgExercise {
   name: string;
+  exerciseId?: string;
   targetSets: number;
   targetReps: number;
   targetWeight?: number;
@@ -384,10 +393,16 @@ interface ProgExercise {
 interface ProgSession {
   id: string;
   title: string;
+  rest: boolean;
   exercises: ProgExercise[];
 }
 
-/** Normalise les séances fournies par le LLM : ids stables, nombres valides. */
+/**
+ * Normalise les séances fournies par le LLM : ids stables, nombres valides, et
+ * rattachement à la banque d'exercices. On résout `exerciseId` (priorité) ou le
+ * nom contre la banque pour que le suivi par muscle/équilibrage fonctionne ;
+ * sinon on conserve le nom libre tel quel.
+ */
 function normalizeSessions(raw: unknown): ProgSession[] {
   if (!Array.isArray(raw)) return [];
   return raw.map((s) => {
@@ -400,14 +415,21 @@ function normalizeSessions(raw: unknown): ProgSession[] {
       const targetSets = Number(ex.targetSets);
       const targetReps = Number(ex.targetReps);
       const targetWeight = ex.targetWeight != null ? Number(ex.targetWeight) : undefined;
+      // Rattache l'exo à la banque : par id fourni, sinon par nom exact.
+      const rawName = String(ex.name ?? "").trim();
+      const rawId = typeof ex.exerciseId === "string" ? ex.exerciseId.trim() : "";
+      const def = rawId ? EXERCISE_BY_ID[rawId] : findExerciseByName(rawName);
       return {
-        name: String(ex.name ?? "").trim(),
+        name: def?.name ?? rawName,
+        ...(def ? { exerciseId: def.id } : {}),
         targetSets: Number.isFinite(targetSets) && targetSets > 0 ? targetSets : 3,
         targetReps: Number.isFinite(targetReps) && targetReps > 0 ? targetReps : 8,
         ...(targetWeight != null && Number.isFinite(targetWeight) ? { targetWeight } : {})
       };
     }).filter((ex) => ex.name);
-    return { id, title, exercises };
+    // Jour de repos = repos explicite OU aucun exercice nommé.
+    const rest = session.rest === true || exercises.length === 0;
+    return { id, title, rest, exercises };
   });
 }
 
@@ -435,6 +457,40 @@ async function saveProgram(ctx: ExecCtx, args: ToolArgs): Promise<WriteRecord> {
   const ref = await col.add({ ...payload, createdAt: FieldValue.serverTimestamp() });
   ctx.undo = { type: "delete", collection: "programs", id: ref.id, label: `programme « ${name} »` };
   return { kind: "program_saved", summary: `Programme « ${name} » créé`, ref: ref.id };
+}
+
+/** Groupes musculaires (labels FR) d'un exo de la banque, dédupliqués. */
+function groupsOf(primary: readonly string[], secondary: readonly string[] = []): string[] {
+  const groups = new Set<MuscleGroup>();
+  for (const m of [...primary, ...secondary]) {
+    const g = MUSCLE_TO_GROUP[m as keyof typeof MUSCLE_TO_GROUP];
+    if (g) groups.add(g);
+  }
+  return Array.from(groups).map((g) => MUSCLE_GROUP_LABELS[g]);
+}
+
+/**
+ * Recherche d'exercices dans la banque (LECTURE SEULE — n'écrit rien). Renvoie une
+ * liste compacte {id, name, groups, equipment} pour que l'agent choisisse les
+ * exerciseId à passer à save_program. Limité pour ne pas saturer le contexte.
+ */
+export function searchExercisesTool(args: ToolArgs): Record<string, unknown> {
+  const query = String(args.query ?? "");
+  const group = typeof args.group === "string" ? args.group.trim() : "";
+  let list = searchExercises(query);
+  if (group) {
+    const ids = new Set(exercisesByGroup(group as MuscleGroup).map((e) => e.id));
+    list = list.filter((e) => ids.has(e.id));
+  }
+  return {
+    count: list.length,
+    exercises: list.slice(0, 40).map((e) => ({
+      id: e.id,
+      name: e.name,
+      groups: groupsOf(e.primary, e.secondary),
+      ...(e.equipment ? { equipment: e.equipment } : {})
+    }))
+  };
 }
 
 async function deleteProgram(ctx: ExecCtx, args: ToolArgs): Promise<WriteRecord> {

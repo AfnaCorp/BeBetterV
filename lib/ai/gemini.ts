@@ -33,12 +33,19 @@ export interface ToolCallEvent {
   args: Record<string, unknown>;
 }
 
+/** Étapes émises au fil de l'eau pour le feedback live (avant le texte final). */
+export type ToolProgress =
+  | { phase: "start"; name: string; args: Record<string, unknown> }
+  | { phase: "end"; name: string; args: Record<string, unknown>; result: Record<string, unknown> };
+
 interface RunWithToolsArgs {
   systemPrompt: string;
   tools: FunctionDeclaration[];
   history: GeminiTurn[];
   message: string;
   executeTool: (call: ToolCallEvent) => Promise<Record<string, unknown>>;
+  /** Notifié au début/fin de chaque appel d'outil (pour streamer les étapes). */
+  onProgress?: (p: ToolProgress) => void;
   maxRounds?: number;
 }
 
@@ -48,6 +55,7 @@ export async function runWithTools({
   history,
   message,
   executeTool,
+  onProgress,
   maxRounds = 5
 }: RunWithToolsArgs): Promise<string> {
   const model = getClient().getGenerativeModel({
@@ -87,7 +95,9 @@ export async function runWithTools({
     const responseParts: Part[] = [];
     for (const call of functionCalls) {
       const { name, args } = call.functionCall;
+      onProgress?.({ phase: "start", name, args });
       const response = await executeTool({ name, args });
+      onProgress?.({ phase: "end", name, args, result: response });
       responseParts.push({
         functionResponse: { name, response }
       } as Part);

@@ -87,7 +87,22 @@ if (!resp.ok) {
   console.error("Coach API failed:", resp.status, await resp.text());
   process.exit(1);
 }
-const body = await resp.json();
+// La réponse est un flux SSE : on lit les événements `step` (étapes de l'agent)
+// puis `done` (réponse finale + écritures).
+const sse = await resp.text();
+const body = { answer: "", writes: [] };
+for (const block of sse.split("\n\n")) {
+  const event = block.match(/^event:\s*(.*)$/m)?.[1]?.trim();
+  const data = block.match(/^data:\s*(.*)$/m)?.[1]?.trim();
+  if (!event || !data) continue;
+  const parsed = JSON.parse(data);
+  if (event === "step") console.log("   …", parsed.label);
+  else if (event === "done") Object.assign(body, parsed);
+  else if (event === "error") {
+    console.error("Coach stream error:", parsed.error);
+    process.exit(1);
+  }
+}
 console.log(`--- COACH ANSWER (${dt}s) ---\n${body.answer}\n`);
 console.log("--- WRITES (from API response) ---");
 (body.writes ?? []).forEach((w) => console.log(" •", w.kind, "·", w.summary));

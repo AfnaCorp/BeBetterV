@@ -147,6 +147,13 @@ export function getExercise(id: string | undefined): ExerciseDef | undefined {
   return id ? EXERCISE_BY_ID[id] : undefined;
 }
 
+/** Cherche un exo de la banque par nom exact (insensible accents/casse). */
+export function findExerciseByName(name: string): ExerciseDef | undefined {
+  const q = normalize(name);
+  if (!q) return undefined;
+  return EXERCISE_BANK.find((e) => normalize(e.name) === q);
+}
+
 /** Muscles (détaillés) travaillés par un exo, primaires + secondaires dédupliqués. */
 export function musclesOf(def: ExerciseDef): Muscle[] {
   return Array.from(new Set([...def.primary, ...(def.secondary ?? [])]));
