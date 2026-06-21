@@ -602,6 +602,7 @@ function LogView({
             <div
               key={exIdx}
               className="relative neu-surface-sm overflow-hidden rounded-2xl pl-1.5"
+              style={{ boxShadow: "0 6px 14px -5px rgba(0,0,0,0.26)" }}
             >
               <span className={`absolute inset-y-0 left-0 w-1.5 ${statusBar}`} aria-hidden />
               <div className="flex items-center gap-2 px-4 py-2.5">
