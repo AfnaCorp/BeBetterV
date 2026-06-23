@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MuscleGroupBadge } from "@/components/sport/muscle-group-badge";
 import {
   exercisesByGroup,
   getExercise,
@@ -164,8 +165,10 @@ function ExerciseRow({
   onMoveDown?: () => void;
 }) {
   const def = getExercise(ex.exerciseId);
+  // Groupes musculaires principaux (dédupliqués) ciblés par l'exo de la banque.
+  // Le 1er = groupe principal, mis en avant par la pastille colorée.
   const primaryGroups = def
-    ? Array.from(new Set(def.primary.map((m) => MUSCLE_GROUP_LABELS[MUSCLE_TO_GROUP[m]])))
+    ? Array.from(new Set(def.primary.map((m) => MUSCLE_TO_GROUP[m])))
     : [];
   return (
     <div className="rounded-2xl bg-card/70 p-3 ring-1 ring-border/50">
@@ -176,7 +179,11 @@ function ExerciseRow({
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-foreground">{ex.name}</p>
           {primaryGroups.length > 0 && (
-            <p className="truncate text-[11px] text-muted-foreground">{primaryGroups.join(" · ")}</p>
+            <div className="mt-1 flex flex-wrap items-center gap-1">
+              {primaryGroups.map((g) => (
+                <MuscleGroupBadge key={g} group={g} />
+              ))}
+            </div>
           )}
         </div>
         <div className="flex shrink-0 items-center">
@@ -333,7 +340,7 @@ function ExerciseBankPicker({
 
           {results.map((def) => {
             const already = existing.has(def.id);
-            const groups = Array.from(new Set(def.primary.map((m) => MUSCLE_GROUP_LABELS[MUSCLE_TO_GROUP[m]])));
+            const groups = Array.from(new Set(def.primary.map((m) => MUSCLE_TO_GROUP[m])));
             return (
               <button
                 key={def.id}
@@ -342,7 +349,10 @@ function ExerciseBankPicker({
               >
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium text-foreground">{def.name}</span>
-                  <span className="block truncate text-[11px] text-muted-foreground">{groups.join(" · ")}</span>
+                  <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                    {groups[0] && <MuscleGroupBadge group={groups[0]} label={false} />}
+                    <span className="truncate">{groups.map((g) => MUSCLE_GROUP_LABELS[g]).join(" · ")}</span>
+                  </span>
                 </span>
                 {already ? (
                   <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
@@ -586,10 +596,13 @@ function WeeklyMuscleSummary({ sessions }: { sessions: ProgramSession[] }) {
             return (
               <div key={v.group} className="flex items-center gap-3">
                 <span
-                  className={`w-24 shrink-0 text-xs font-medium ${
+                  className={`flex w-24 shrink-0 items-center gap-1.5 text-xs font-medium ${
                     untrained ? "text-muted-foreground/50" : "text-foreground"
                   }`}
                 >
+                  <span className={untrained ? "opacity-40" : ""}>
+                    <MuscleGroupBadge group={v.group} label={false} />
+                  </span>
                   {MUSCLE_GROUP_LABELS[v.group]}
                 </span>
                 <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">

@@ -1,6 +1,6 @@
 import "server-only";
-import { runWithTools, type ToolProgress } from "./gemini";
-import { COACH_SYSTEM_PROMPT, asGeminiHistory, buildContextPayload, type CoachContext } from "./coach-prompt";
+import { generateText, runWithTools, type ToolProgress } from "./gemini";
+import { COACH_BRIEFING_PROMPT, COACH_SYSTEM_PROMPT, asGeminiHistory, buildContextPayload, type CoachContext } from "./coach-prompt";
 import { coachToolDeclarations } from "./coach-tools";
 import { executeTool, searchExercisesTool } from "./coach-executor";
 import type { ChatMessage, WriteRecord } from "@/types";
@@ -95,4 +95,20 @@ export async function askCoach({ uid, message, history, context, onStep }: AskCo
   });
 
   return { answer, writes };
+}
+
+/**
+ * Génère le « bilan du jour » : un court message d'accueil personnalisé à partir
+ * du contexte de l'utilisateur. Lecture seule, modèle rapide, aucun outil ni
+ * écriture — purement conversationnel.
+ */
+export async function coachBriefing({ context }: { context: CoachContext }): Promise<string> {
+  const message = [
+    "Contexte utilisateur courant (JSON) :",
+    JSON.stringify(buildContextPayload(context), null, 2),
+    "",
+    "Rédige maintenant le bilan du jour."
+  ].join("\n");
+
+  return generateText({ systemPrompt: COACH_BRIEFING_PROMPT, message, fast: true });
 }

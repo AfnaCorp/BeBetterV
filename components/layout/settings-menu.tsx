@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { LogOut, Settings, Trash2, UserPen } from "lucide-react";
+import { LogOut, Settings, Trash2, User, UserPen } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
 import { useAppData } from "@/components/app-data-provider";
 import { Button } from "@/components/ui/button";
 import { CoachEditor } from "@/components/coach/coach-editor";
+import { ProfileEditor } from "@/components/profile-editor";
 import { CoachAvatarBadge } from "@/components/coach/coach-avatar";
-import { DEFAULT_COACH_NAME } from "@/lib/coach-avatars";
 import { cn } from "@/lib/utils/cn";
 
 export function SettingsMenu() {
@@ -15,10 +15,11 @@ export function SettingsMenu() {
   const { profile, saveProfile } = useAppData();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [editingProfile, setEditingProfile] = useState(false);
   const [wiping, setWiping] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
-  const coachName = profile?.coachName?.trim() || DEFAULT_COACH_NAME;
+  const userName = profile?.name?.trim() || "Mon profil";
 
   useEffect(() => {
     if (!open) return;
@@ -81,13 +82,23 @@ export function SettingsMenu() {
             <div className="flex items-center gap-2 px-2 py-2">
               <CoachAvatarBadge avatarId={profile?.coachAvatar} size={32} />
               <div className="min-w-0 leading-tight">
-                <p className="truncate text-sm font-semibold text-foreground">{coachName}</p>
-                <p className="truncate text-xs text-muted-foreground">{profile?.email}</p>
+                <p className="truncate text-sm font-semibold text-foreground">{userName}</p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {profile?.username ? `@${profile.username}` : profile?.email}
+                </p>
               </div>
             </div>
 
             <div className="my-1 h-px bg-foreground/5" />
 
+            <MenuItem
+              icon={<User className="h-4 w-4" />}
+              label="Modifier mon profil"
+              onClick={() => {
+                setOpen(false);
+                setEditingProfile(true);
+              }}
+            />
             <MenuItem
               icon={<UserPen className="h-4 w-4" />}
               label="Personnaliser le coach"
@@ -120,6 +131,34 @@ export function SettingsMenu() {
           </div>
         )}
       </div>
+
+      {editingProfile && (
+        <div className="fixed inset-0 z-[80] flex min-h-dvh items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-foreground/25 backdrop-blur-md"
+            onClick={() => setEditingProfile(false)}
+            aria-hidden
+          />
+          <div
+            role="dialog"
+            aria-label="Modifier mon profil"
+            className="neu-surface relative w-full max-w-sm rounded-3xl border border-border p-6 shadow-2xl"
+          >
+            <h2 className="mb-4 text-center text-lg font-semibold text-foreground">
+              Modifier mon profil
+            </h2>
+            <ProfileEditor
+              initialName={profile?.name}
+              username={profile?.username}
+              onCancel={() => setEditingProfile(false)}
+              onSave={async (patch) => {
+                await saveProfile(patch);
+                setEditingProfile(false);
+              }}
+            />
+          </div>
+        </div>
+      )}
 
       {editing && (
         <div className="fixed inset-0 z-[80] flex min-h-dvh items-center justify-center p-4">

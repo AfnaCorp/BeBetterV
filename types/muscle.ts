@@ -95,6 +95,21 @@ export const MUSCLE_TO_GROUP: Record<Muscle, MuscleGroup> = {
   adductors: "legs",
 };
 
+/**
+ * Couleur sobre par grand groupe musculaire, pour le repérage visuel (pastilles /
+ * badges). Une teinte douce et distincte par groupe : pastille à fond clair, point
+ * plus saturé. Classes Tailwind **statiques** (jamais construites dynamiquement)
+ * pour rester captées par le purge JIT.
+ */
+export const MUSCLE_GROUP_COLORS: Record<MuscleGroup, { dot: string; pill: string }> = {
+  chest: { dot: "bg-rose-500", pill: "bg-rose-50 text-rose-700 ring-rose-200/70" },
+  back: { dot: "bg-sky-500", pill: "bg-sky-50 text-sky-700 ring-sky-200/70" },
+  shoulders: { dot: "bg-amber-500", pill: "bg-amber-50 text-amber-700 ring-amber-200/70" },
+  arms: { dot: "bg-violet-500", pill: "bg-violet-50 text-violet-700 ring-violet-200/70" },
+  core: { dot: "bg-emerald-500", pill: "bg-emerald-50 text-emerald-700 ring-emerald-200/70" },
+  legs: { dot: "bg-indigo-500", pill: "bg-indigo-50 text-indigo-700 ring-indigo-200/70" },
+};
+
 /** Ordre d'affichage stable des groupes. */
 export const MUSCLE_GROUP_ORDER: MuscleGroup[] = [
   "chest",

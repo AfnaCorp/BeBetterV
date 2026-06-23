@@ -77,6 +77,42 @@ export function onCoachHint(handler: (message: string | null) => void): () => vo
   return () => window.removeEventListener(COACH_HINT_EVENT, listener);
 }
 
+const COACH_THINKING_EVENT = "coach-thinking";
+
+// Valeur courante, conservée hors React pour qu'un abonné montant en cours de route
+// (ex. panneau rouvert pendant une requête) connaisse immédiatement l'état « occupé ».
+let coachThinking = false;
+
+/**
+ * Signale que le coach est en train de « réfléchir » (requête en cours). Émis par
+ * le chat ; écouté par la bulle flottante (indicateur panneau fermé) et par le chat
+ * lui-même (anti-concurrence / file d'attente). Lifecycle-indépendant : reste vrai
+ * même si le chat est démonté (panneau refermé) tant que la requête n'est pas finie.
+ */
+export function setCoachThinking(thinking: boolean) {
+  coachThinking = thinking;
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(COACH_THINKING_EVENT, { detail: thinking }));
+}
+
+/** État « réflexion » courant, lisible synchroniquement (au montage notamment). */
+export function isCoachThinking(): boolean {
+  return coachThinking;
+}
+
+/**
+ * S'abonne à l'état « réflexion » du coach. Le handler est aussi appelé une fois
+ * immédiatement avec la valeur courante, pour synchroniser un abonné qui monte
+ * pendant une requête déjà en cours. Retourne la fonction de cleanup.
+ */
+export function onCoachThinking(handler: (thinking: boolean) => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  const listener = (e: Event) => handler((e as CustomEvent<boolean>).detail);
+  window.addEventListener(COACH_THINKING_EVENT, listener);
+  handler(coachThinking);
+  return () => window.removeEventListener(COACH_THINKING_EVENT, listener);
+}
+
 /** Vibration haptique courte (mobile). Sans effet sur desktop / iOS Safari. */
 export function hapticPulse() {
   if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {

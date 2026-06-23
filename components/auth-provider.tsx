@@ -10,6 +10,7 @@ import {
   type User
 } from "firebase/auth";
 import { firebaseAuth, googleProvider } from "@/lib/firebase/client";
+import { requestPersistentStorage } from "@/lib/persist-storage";
 
 interface AuthContextValue {
   user: User | null;
@@ -30,6 +31,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return onAuthStateChanged(firebaseAuth, (next) => {
       setUser(next);
       setLoading(false);
+      // Utilisateur connecté : on demande le stockage persistant pour que la
+      // session Firebase (IndexedDB) ne soit pas évincée → pas de reconnexion
+      // intempestive en PWA. Best-effort, sans bloquer le rendu.
+      if (next) void requestPersistentStorage();
     });
   }, []);
 

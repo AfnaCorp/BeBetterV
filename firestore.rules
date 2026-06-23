@@ -6,6 +6,19 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == uid;
     }
 
+    // Index d'unicité des usernames (id du doc = username). La réservation se fait
+    // dans une transaction côté client : lecture d'existence + création si libre.
+    match /usernames/{username} {
+      // Lecture (existence) nécessaire à la transaction de réservation.
+      allow get: if request.auth != null;
+      // Seul le propriétaire réserve, et uniquement un mapping vers SON uid.
+      // `create` échoue si le doc existe déjà → unicité garantie au niveau base.
+      allow create: if request.auth != null
+                    && request.resource.data.uid == request.auth.uid;
+      // Réservation immuable depuis le client (pas de vol/écrasement d'username).
+      allow update, delete: if false;
+    }
+
     match /users/{userId} {
       allow read, write: if isOwner(userId);
 

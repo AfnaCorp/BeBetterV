@@ -10,6 +10,7 @@ import { getApps, initializeApp, type FirebaseApp } from "firebase/app";
 import {
   browserLocalPersistence,
   getAuth,
+  indexedDBLocalPersistence,
   inMemoryPersistence,
   initializeAuth,
   GoogleAuthProvider,
@@ -37,8 +38,14 @@ function createAuth(): Auth {
   // App déjà initialisée (HMR Next) : on réutilise l'instance d'auth existante.
   if (existingApp) return getAuth(firebaseApp);
   // Côté serveur, aucune persistance navigateur disponible → mémoire seule.
+  // Côté navigateur : IndexedDB en priorité (bien plus durable que localStorage,
+  // notamment en PWA installée / WebKit ITP qui évince volontiers localStorage),
+  // avec repli localStorage si IndexedDB est indisponible (mode privé, etc.).
+  // `initializeAuth` essaie les persistances dans l'ordre et garde la 1ère dispo.
   const persistence =
-    typeof window === "undefined" ? inMemoryPersistence : browserLocalPersistence;
+    typeof window === "undefined"
+      ? inMemoryPersistence
+      : [indexedDBLocalPersistence, browserLocalPersistence];
   return initializeAuth(firebaseApp, { persistence });
 }
 

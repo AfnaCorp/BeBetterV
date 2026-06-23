@@ -84,11 +84,12 @@ Types sources : [types/log.ts](types/log.ts) · [types/program.ts](types/program
 Pipeline : **bulle de chat (client)** → `POST /api/coach` (vérifie le token, persiste le message user) → `askCoach()` → **boucle d'outils Gemini** → exécuteurs qui écrivent en Firestore via firebase-admin → réponse + liste des `writes`.
 
 - [lib/ai/gemini.ts](lib/ai/gemini.ts) — wrapper SDK. `generateText()` (texte simple) + `runWithTools()` (boucle function-calling, max 5 rounds, exécution séquentielle des tool calls). Init **paresseuse** du client (la clé n'est lue qu'au 1ᵉʳ appel, pour ne pas casser `next build`).
-- [lib/ai/coach-prompt.ts](lib/ai/coach-prompt.ts) — `COACH_SYSTEM_PROMPT` (règles de l'agent) + `buildContextPayload(ctx)` qui sérialise profile + user_wiki + memory_facts + entrées récentes (14 poids/sommeil/dayLogs, 20 repas, 10 séances, 30 habitudes) + programmes + `today`.
+- [lib/ai/coach-prompt.ts](lib/ai/coach-prompt.ts) — `COACH_SYSTEM_PROMPT` (règles de l'agent) + `COACH_BRIEFING_PROMPT` (bilan du jour, lecture seule) + `buildContextPayload(ctx)` qui sérialise profile + user_wiki + memory_facts + entrées récentes (14 poids/sommeil/dayLogs, 20 repas, 10 séances, 30 habitudes) + programmes + `today`.
 - [lib/ai/coach-tools.ts](lib/ai/coach-tools.ts) — déclarations des `FunctionDeclaration` Gemini + type `CoachToolName`.
 - [lib/ai/coach-executor.ts](lib/ai/coach-executor.ts) — implémentation de chaque outil (écrit via `adminDb`), + mécanisme d'**undo** un-niveau (chaque écriture enregistre son opération inverse dans `_meta/lastAction`).
-- [lib/ai/ai-client.ts](lib/ai/ai-client.ts) — `askCoach({uid, message, history, context})`, orchestre la boucle, renvoie `{answer, writes}`.
+- [lib/ai/ai-client.ts](lib/ai/ai-client.ts) — `askCoach({uid, message, history, context})`, orchestre la boucle, renvoie `{answer, writes}` ; `coachBriefing({context})` génère le **bilan du jour** (modèle rapide, sans outils ni écriture).
 - [app/api/coach/route.ts](app/api/coach/route.ts) — endpoint POST. Auth par `Authorization: Bearer <idToken>` (vérifié avec `adminAuth.verifyIdToken`), persiste les messages user/assistant.
+- [app/api/coach/briefing/route.ts](app/api/coach/briefing/route.ts) — endpoint POST (auth Bearer). Renvoie `{ briefing }` : le message d'accueil personnalisé affiché à l'ouverture de la bulle. Lecture seule, rien n'est persisté (le bilan est éphémère, mis en cache localStorage par jour côté client).
 - [app/api/wipe/route.ts](app/api/wipe/route.ts) — purge toutes les sous-collections de l'utilisateur (réinitialisation des données).
 
 **Outils du coach** (`coachExecutors`) : `log_weight`, `log_sleep`, `log_meal`, `log_session`, `log_day`, `add_habit`, `toggle_habit`, `remove_habit`, `update_entry`, `delete_entry`, `save_program`, `delete_program`, `remember_fact`, `update_fact`, `forget_fact`, `update_user_wiki`, `undo_last`.

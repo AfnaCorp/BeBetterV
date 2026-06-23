@@ -24,16 +24,20 @@ export interface MealEntry extends BaseEntry {
   type?: "petit_dej" | "dej" | "diner" | "snack";
 }
 
-/** Un apport de protéines dans la journée (ajouté au fur et à mesure). */
-export interface ProteinIntake {
+/** Un apport ponctuel d'un nutriment (protéines, sucre…) dans la journée,
+ *  ajouté au fur et à mesure. */
+export interface NutrientIntake {
   /** Quantité en grammes. */
   g: number;
-  /** Libellé optionnel (ex. « shaker », « poulet midi »). */
+  /** Libellé optionnel (ex. « shaker », « soda midi »). */
   label?: string;
   /** Horodatage ISO de l'ajout. */
   at: string;
   source: EntrySource;
 }
+
+/** @deprecated Alias historique — utiliser {@link NutrientIntake}. */
+export type ProteinIntake = NutrientIntake;
 
 export interface DayLog extends BaseEntry {
   energy: number;
@@ -46,7 +50,15 @@ export interface DayLog extends BaseEntry {
    */
   proteinG?: number;
   /** Détail des apports protéines cumulés dans la journée. */
-  proteinEntries?: ProteinIntake[];
+  proteinEntries?: NutrientIntake[];
+  /**
+   * Total de sucre du jour, en grammes. Miroir de la somme de `sugarEntries`
+   * (gardé à plat pour le contexte coach / les requêtes), additionné au sucre des
+   * repas du jour côté UI.
+   */
+  sugarG?: number;
+  /** Détail des apports de sucre cumulés dans la journée. */
+  sugarEntries?: NutrientIntake[];
   notes?: string;
 }
 

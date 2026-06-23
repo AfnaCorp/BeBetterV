@@ -5,6 +5,7 @@ import { limit, orderBy } from "firebase/firestore";
 import { useAuth } from "@/components/auth-provider";
 import { COLLECTIONS } from "@/lib/firebase/collections";
 import { clearField, createEntry, deleteEntry, setEntry, subscribe, subscribeDoc, subscribeProfile, updateEntry, writeProfile } from "@/lib/firebase/repo";
+import { ensureUserIdentity } from "@/lib/firebase/username";
 import { toISODate } from "@/lib/utils/dates";
 import type {
   ChatMessage,
@@ -97,15 +98,18 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     const subs = [
       subscribeProfile<UserProfile>(uid, (p) => {
         setProfile(p);
-        // Première connexion : aucun doc profil → on en crée un minimal à partir
-        // de l'utilisateur Auth, pour que le rename du coach ait une base durable
-        // et que le setup initial puisse se déclencher.
-        if (p == null && !profileBootstrapped) {
+        // Bootstrap identité : à la 1ère connexion (aucun doc profil) on crée le
+        // profil avec un nom cohérent + un username unique ; pour un ancien compte
+        // sans username, on le backfille. Réservation atomique → pas de collision.
+        if (!profileBootstrapped && (p == null || !p.username)) {
           profileBootstrapped = true;
-          void writeProfile(uid, {
-            name: user?.displayName ?? "",
-            email: user?.email ?? "",
-            createdAt: new Date().toISOString(),
+          void ensureUserIdentity(uid, p, {
+            displayName: user?.displayName,
+            email: user?.email,
+          }).catch(() => {
+            // Échec (offline, contention extrême…) : on autorise une nouvelle
+            // tentative au prochain snapshot plutôt que de rester bloqué.
+            profileBootstrapped = false;
           });
         }
       }),

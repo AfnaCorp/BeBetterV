@@ -7,6 +7,7 @@ import {
 } from "@google/generative-ai";
 
 const TEXT_MODEL = process.env.GEMINI_TEXT_MODEL?.trim() || "gemini-2.5-pro";
+const FAST_MODEL = process.env.GEMINI_FAST_MODEL?.trim() || "gemini-2.5-flash";
 
 // Initialisation paresseuse : la clé n'est lue qu'au premier appel, pas à
 // l'import du module. Sinon `next build` (qui charge ce module pour collecter
@@ -26,6 +27,30 @@ function getClient(): GoogleGenerativeAI {
 export interface GeminiTurn {
   role: "user" | "model";
   text: string;
+}
+
+/**
+ * Génération de texte simple (pas de tools, un seul tour). Sert aux tâches
+ * courtes/rapides comme le bilan du jour. `fast` → modèle flash (par défaut),
+ * sinon le modèle texte principal.
+ */
+export async function generateText({
+  systemPrompt,
+  message,
+  fast = true
+}: {
+  systemPrompt?: string;
+  message: string;
+  fast?: boolean;
+}): Promise<string> {
+  const model = getClient().getGenerativeModel({
+    model: fast ? FAST_MODEL : TEXT_MODEL,
+    ...(systemPrompt ? { systemInstruction: systemPrompt } : {})
+  });
+  const result = await model.generateContent({
+    contents: [{ role: "user", parts: [{ text: message }] }]
+  });
+  return result.response.text().trim();
 }
 
 export interface ToolCallEvent {

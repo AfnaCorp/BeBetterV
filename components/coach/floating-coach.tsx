@@ -5,7 +5,7 @@ import { MessageCircle, X } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
 import { useAppData } from "@/components/app-data-provider";
 import { DEFAULT_COACH_NAME } from "@/lib/coach-avatars";
-import { onOpenCoach, onCoachHint } from "@/lib/coach-feedback";
+import { onOpenCoach, onCoachHint, onCoachThinking } from "@/lib/coach-feedback";
 import { CoachAvatarBadge } from "./coach-avatar";
 import { CoachChat } from "./coach-chat";
 
@@ -56,6 +56,9 @@ export function FloatingCoach() {
   const [hint, setHint] = useState<string | null>(null);
   // Le coach a-t-il été ouvert via le hint « créer un programme » ? → message d'amorce.
   const [onboarding, setOnboarding] = useState(false);
+  // Le coach réfléchit-il (requête en cours) ? Affiché sur la bulle quand le panneau
+  // est fermé — l'état vit hors du chat pour survivre à la fermeture du panneau.
+  const [thinking, setThinking] = useState(false);
   const dragState = useRef<{
     pointerId: number;
     offsetX: number;
@@ -87,6 +90,8 @@ export function FloatingCoach() {
   useEffect(() => onOpenCoach(() => setOpen(true)), []);
   // Hint contextuel posé par une page (ex. création de programme).
   useEffect(() => onCoachHint(setHint), []);
+  // État « réflexion » du coach, émis par le chat (même panneau fermé).
+  useEffect(() => onCoachThinking(setThinking), []);
 
   const persist = useCallback((pos: Position) => {
     try {
@@ -345,6 +350,39 @@ export function FloatingCoach() {
           className="grid place-items-center rounded-full bg-accent-gradient text-white active:scale-95"
         >
           <MessageCircle className="h-8 w-8" />
+
+          {/* Indicateur « réflexion » : halo qui pulse + pastille de points animés,
+              sobre mais clair, visible uniquement panneau fermé (le bouton n'est
+              rendu que si !open). Côté intérieur pour ne pas déborder de l'écran. */}
+          {thinking && (
+            <>
+              <span
+                aria-hidden
+                className="pointer-events-none absolute inset-0 rounded-full"
+                style={{
+                  boxShadow: "0 0 0 2px rgba(198,74,214,0.55)",
+                  animation: "coachThinkingPulse 1.6s ease-out infinite",
+                }}
+              />
+              <span
+                aria-label="Le coach réfléchit"
+                role="status"
+                className="absolute top-0 flex items-center gap-1 rounded-full bg-card px-1.5 py-1 shadow-md ring-1 ring-foreground/5"
+                style={{ [onLeftSide ? "right" : "left"]: -2 } as React.CSSProperties}
+              >
+                {[0, 1, 2].map((i) => (
+                  <span
+                    key={i}
+                    className="h-1.5 w-1.5 rounded-full bg-accent-gradient"
+                    style={{
+                      animation: "coachThinkingDot 1.1s ease-in-out infinite",
+                      animationDelay: `${i * 0.16}s`,
+                    }}
+                  />
+                ))}
+              </span>
+            </>
+          )}
         </button>
       )}
 
@@ -357,6 +395,29 @@ export function FloatingCoach() {
           100% {
             opacity: 1;
             transform: scale(1);
+          }
+        }
+        @keyframes coachThinkingPulse {
+          0% {
+            opacity: 0.6;
+            transform: scale(1);
+          }
+          70%,
+          100% {
+            opacity: 0;
+            transform: scale(1.4);
+          }
+        }
+        @keyframes coachThinkingDot {
+          0%,
+          80%,
+          100% {
+            opacity: 0.35;
+            transform: translateY(0);
+          }
+          40% {
+            opacity: 1;
+            transform: translateY(-3px);
           }
         }
       `}</style>

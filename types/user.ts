@@ -3,6 +3,12 @@ export type EntrySource = "coach" | "manual";
 export interface UserProfile {
   id: string;
   name: string;
+  /**
+   * Identifiant public unique (slug), généré automatiquement à la création du
+   * compte et garanti unique via la collection `usernames` (cf. lib/firebase/username.ts).
+   * Optionnel sur le type pour les anciens comptes ; backfillé au prochain chargement.
+   */
+  username?: string;
   email: string;
   goal?: string;
   weightTarget?: number;

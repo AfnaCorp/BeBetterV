@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  Candy,
   ChevronRight,
   Drumstick,
   Heart,
@@ -23,7 +24,7 @@ import { Textarea } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { toISODate } from "@/lib/utils/dates";
 import { useSelectedDate } from "@/lib/utils/timeline";
-import type { DayLog, MealEntry, SleepEntry, WeightEntry } from "@/types";
+import type { DayLog, MealEntry, NutrientIntake, SleepEntry, WeightEntry } from "@/types";
 
 function dayKey(iso: string) {
   return iso.slice(0, 10);
@@ -42,18 +43,18 @@ interface DayBucket {
   log?: DayLog;
 }
 
-/** Raccourci d'apport protéines (quantité + libellé optionnel). */
-interface ProteinPreset {
+/** Raccourci d'apport d'un nutriment (quantité + libellé optionnel). */
+interface IntakePreset {
   g: number;
   label?: string;
 }
 
 /**
- * Source de protéines unifiée pour le panneau détail : soit un apport direct
- * (`entry`, supprimable, avec son index dans proteinEntries), soit un repas du jour
- * (`meal`, lecture seule).
+ * Source d'un nutriment unifiée pour le panneau détail : soit un apport direct
+ * (`entry`, supprimable, avec son index dans les entries du dayLog), soit un repas
+ * du jour (`meal`, lecture seule).
  */
-interface ProteinSource {
+interface IntakeSource {
   g: number;
   label: string;
   at?: string;
@@ -326,11 +327,17 @@ function ProteinProgress({ total, target }: { total: number; target: number }) {
 }
 
 /**
- * Panneau détail des protéines du jour (bottom-sheet) : liste des apports cumulés
- * (saisis par l'utilisateur ou le coach), ajout rapide, suppression. Le total et
- * l'objectif sont rappelés en tête.
+ * Panneau détail d'un nutriment du jour (bottom-sheet), réutilisé pour les
+ * protéines et le sucre : liste des apports cumulés (saisis par l'utilisateur ou
+ * le coach, ou issus des repas), ajout rapide, suppression. Total (et objectif
+ * s'il existe) rappelés en tête.
  */
-function ProteinDetail({
+function IntakeDetail({
+  title,
+  icon: Icon,
+  emptyHint,
+  labelPlaceholder = "Libellé (optionnel)",
+  defaultAmount = 20,
   sources,
   total,
   target,
@@ -339,18 +346,29 @@ function ProteinDetail({
   onRemove,
   onClose,
 }: {
+  /** Titre du panneau (ex. « Protéines du jour »). */
+  title: string;
+  /** Icône du nutriment. */
+  icon: typeof Sun;
+  /** Message affiché quand aucun apport n'est encore enregistré. */
+  emptyHint: string;
+  /** Placeholder du champ libellé de l'ajout rapide. */
+  labelPlaceholder?: string;
+  /** Quantité pré-remplie dans l'ajout rapide. */
+  defaultAmount?: number;
   /** Sources unifiées : apports directs + repas du jour. */
-  sources: ProteinSource[];
+  sources: IntakeSource[];
   total: number;
+  /** Objectif éventuel (g). Absent → pas de barre de progression. */
   target: number | undefined;
   /** Apports les plus utilisés (raccourcis). */
-  frequent: ProteinPreset[];
+  frequent: IntakePreset[];
   onAdd: (g: number, label?: string) => void;
   /** Supprime une source (apport direct ou repas). */
-  onRemove: (source: ProteinSource) => void;
+  onRemove: (source: IntakeSource) => void;
   onClose: () => void;
 }) {
-  const [amount, setAmount] = useState<number>(20);
+  const [amount, setAmount] = useState<number>(defaultAmount);
   const [label, setLabel] = useState("");
 
   function add() {
@@ -367,9 +385,9 @@ function ProteinDetail({
         <div className="flex items-center justify-between gap-2 px-5 pb-3 pt-4">
           <div className="flex items-center gap-2">
             <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full neu-inset">
-              <Drumstick className="h-4 w-4 text-muted-foreground" />
+              <Icon className="h-4 w-4 text-muted-foreground" />
             </span>
-            <h3 className="text-base font-semibold text-foreground">Protéines du jour</h3>
+            <h3 className="text-base font-semibold text-foreground">{title}</h3>
           </div>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
             <X className="h-5 w-5" />
@@ -398,7 +416,7 @@ function ProteinDetail({
             <input
               value={label}
               onChange={(e) => setLabel(e.target.value)}
-              placeholder="Libellé (ex. shaker)"
+              placeholder={labelPlaceholder}
               className="h-9 min-w-0 flex-1 rounded-xl neu-inset px-3 text-sm text-foreground outline-none placeholder:text-muted-foreground"
             />
             <button
@@ -439,7 +457,7 @@ function ProteinDetail({
         <div className="flex-1 space-y-1 overflow-y-auto px-3 py-2">
           {sources.length === 0 && (
             <p className="px-3 py-8 text-center text-sm text-muted-foreground">
-              Aucun apport encore. Ajoute tes protéines au fur et à mesure.
+              {emptyHint}
             </p>
           )}
           {sources.map((s, i) => (
@@ -517,6 +535,34 @@ function DayNote({
   );
 }
 
+/**
+ * « Les plus utilisés » : apports les plus fréquents de l'historique (par
+ * libellé + quantité), complétés par des valeurs par défaut pour toujours
+ * proposer 3 raccourcis. Générique : réutilisé pour protéines et sucre.
+ */
+function computeFrequent(
+  perDayEntries: NutrientIntake[][],
+  fallback: IntakePreset[]
+): IntakePreset[] {
+  const counts = new Map<string, { preset: IntakePreset; n: number }>();
+  for (const entries of perDayEntries) {
+    for (const e of entries) {
+      const labelKey = (e.label ?? "").trim().toLowerCase();
+      const key = `${labelKey}|${e.g}`;
+      const cur = counts.get(key);
+      if (cur) cur.n += 1;
+      else counts.set(key, { preset: { g: e.g, label: e.label?.trim() || undefined }, n: 1 });
+    }
+  }
+  const ranked = [...counts.values()].sort((a, b) => b.n - a.n).map((c) => c.preset);
+  for (const f of fallback) {
+    if (ranked.length >= 3) break;
+    const dup = ranked.some((r) => r.g === f.g && (r.label ?? "") === (f.label ?? ""));
+    if (!dup) ranked.push(f);
+  }
+  return ranked.slice(0, 3);
+}
+
 export default function JournalPage() {
   const router = useRouter();
   const {
@@ -534,6 +580,7 @@ export default function JournalPage() {
   } = useAppData();
   const [selected, setSelected] = useSelectedDate();
   const [proteinOpen, setProteinOpen] = useState(false);
+  const [sugarOpen, setSugarOpen] = useState(false);
   const [addingWeight, setAddingWeight] = useState(false);
   const [addingSleep, setAddingSleep] = useState(false);
   const [optimisticWeight, setOptimisticWeight] = useState<WeightEntry | null>(null);
@@ -601,15 +648,15 @@ export default function JournalPage() {
   // additionne les deux. On garde l'index d'origine des apports directs pour la suppression.
   const proteinEntries = log?.proteinEntries ?? [];
   const dayMeals = bucket?.meals ?? [];
-  const proteinSources = useMemo<ProteinSource[]>(() => {
-    const fromEntries: ProteinSource[] = proteinEntries.map((e, i) => ({
+  const proteinSources = useMemo<IntakeSource[]>(() => {
+    const fromEntries: IntakeSource[] = proteinEntries.map((e, i) => ({
       g: e.g,
       label: e.label ?? (e.source === "coach" ? "ajouté par le coach" : "apport"),
       at: e.at,
       kind: "entry",
       entryIndex: i,
     }));
-    const fromMeals: ProteinSource[] = dayMeals
+    const fromMeals: IntakeSource[] = dayMeals
       .filter((m) => m.proteinG != null && m.proteinG > 0)
       .map((m) => ({
         g: m.proteinG as number,
@@ -622,34 +669,47 @@ export default function JournalPage() {
   }, [proteinEntries, dayMeals]);
   const proteinTotal = proteinSources.reduce((acc, s) => acc + s.g, 0);
 
-  // « Les plus utilisés » : apports protéines les plus fréquents de l'historique,
-  // regroupés par libellé + quantité. Repli sur des valeurs par défaut si l'historique
-  // est trop pauvre, pour toujours proposer 3 raccourcis.
-  const frequentProteins = useMemo<ProteinPreset[]>(() => {
-    const counts = new Map<string, { preset: ProteinPreset; n: number }>();
-    for (const d of dayLogs) {
-      for (const e of d.proteinEntries ?? []) {
-        const labelKey = (e.label ?? "").trim().toLowerCase();
-        const key = `${labelKey}|${e.g}`;
-        const cur = counts.get(key);
-        if (cur) cur.n += 1;
-        else counts.set(key, { preset: { g: e.g, label: e.label?.trim() || undefined }, n: 1 });
-      }
-    }
-    const ranked = [...counts.values()].sort((a, b) => b.n - a.n).map((c) => c.preset);
-    const fallback: ProteinPreset[] = [
-      { g: 25, label: "shaker" },
-      { g: 30 },
-      { g: 40 },
-    ];
-    // Complète avec les valeurs par défaut absentes pour toujours avoir 3 items.
-    for (const f of fallback) {
-      if (ranked.length >= 3) break;
-      const dup = ranked.some((r) => r.g === f.g && (r.label ?? "") === (f.label ?? ""));
-      if (!dup) ranked.push(f);
-    }
-    return ranked.slice(0, 3);
-  }, [dayLogs]);
+  // Sources de sucre du jour, sur le même modèle que les protéines : apports directs
+  // (sugarEntries, supprimables) + sucre estimé des repas du jour (lecture seule, le
+  // coach le renseige via log_meal). Total = somme des deux.
+  const sugarEntries = log?.sugarEntries ?? [];
+  const sugarSources = useMemo<IntakeSource[]>(() => {
+    const fromEntries: IntakeSource[] = sugarEntries.map((e, i) => ({
+      g: e.g,
+      label: e.label ?? (e.source === "coach" ? "ajouté par le coach" : "sucre"),
+      at: e.at,
+      kind: "entry",
+      entryIndex: i,
+    }));
+    const fromMeals: IntakeSource[] = dayMeals
+      .filter((m) => m.sugarG != null && m.sugarG > 0)
+      .map((m) => ({
+        g: m.sugarG as number,
+        label: m.description,
+        kind: "meal",
+        mealId: m.id,
+      }));
+    return [...fromEntries, ...fromMeals].sort((a, b) => (a.at ?? "~").localeCompare(b.at ?? "~"));
+  }, [sugarEntries, dayMeals]);
+  const sugarTotal = sugarSources.reduce((acc, s) => acc + s.g, 0);
+
+  // « Les plus utilisés » pour chaque nutriment, dérivés de l'historique.
+  const frequentProteins = useMemo<IntakePreset[]>(
+    () =>
+      computeFrequent(
+        dayLogs.map((d) => d.proteinEntries ?? []),
+        [{ g: 25, label: "shaker" }, { g: 30 }, { g: 40 }]
+      ),
+    [dayLogs]
+  );
+  const frequentSugars = useMemo<IntakePreset[]>(
+    () =>
+      computeFrequent(
+        dayLogs.map((d) => d.sugarEntries ?? []),
+        [{ g: 10 }, { g: 20 }, { g: 30 }]
+      ),
+    [dayLogs]
+  );
 
   // Upsert d'un patch partiel sur le dayLog du jour, en conservant les champs existants.
   const patchDayLog = async (patch: Partial<Omit<DayLog, "id" | "createdAt">>) => {
@@ -663,6 +723,8 @@ export default function JournalPage() {
         meaning: log?.meaning,
         proteinG: log?.proteinG,
         proteinEntries: log?.proteinEntries,
+        sugarG: log?.sugarG,
+        sugarEntries: log?.sugarEntries,
         notes: log?.notes,
         source: "manual",
         ...patch,
@@ -684,6 +746,15 @@ export default function JournalPage() {
   const removeProtein = (index: number) => {
     const next = proteinEntries.filter((_, i) => i !== index);
     return patchDayLog({ proteinEntries: next, proteinG: next.reduce((a, e) => a + e.g, 0) });
+  };
+  // Sucre : même logique (détail sugarEntries + total à plat sugarG).
+  const addSugar = (g: number, label?: string) => {
+    const next = [...sugarEntries, { g, label, at: new Date().toISOString(), source: "manual" as const }];
+    return patchDayLog({ sugarEntries: next, sugarG: next.reduce((a, e) => a + e.g, 0) });
+  };
+  const removeSugar = (index: number) => {
+    const next = sugarEntries.filter((_, i) => i !== index);
+    return patchDayLog({ sugarEntries: next, sugarG: next.reduce((a, e) => a + e.g, 0) });
   };
   // Suppression d'un repas depuis le détail protéines (retire le repas du jour).
   const removeMealSafe = async (mealId: string) => {
@@ -839,6 +910,18 @@ export default function JournalPage() {
               ) : undefined
             }
           />
+          <MeasureRow
+            icon={Candy}
+            label="Sucre"
+            onClick={() => setSugarOpen(true)}
+            target={`${sugarTotal} g · appuie pour le détail`}
+            action={
+              <span className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+                {sugarTotal} g
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              </span>
+            }
+          />
         </div>
 
         {/* Note libre du jour — éditable par l'utilisateur et le coach */}
@@ -846,7 +929,12 @@ export default function JournalPage() {
       </div>
 
       {proteinOpen && (
-        <ProteinDetail
+        <IntakeDetail
+          title="Protéines du jour"
+          icon={Drumstick}
+          emptyHint="Aucun apport encore. Ajoute tes protéines au fur et à mesure."
+          labelPlaceholder="Libellé (ex. shaker)"
+          defaultAmount={20}
           sources={proteinSources}
           total={proteinTotal}
           target={profile?.proteinTargetG}
@@ -857,6 +945,26 @@ export default function JournalPage() {
             else if (s.kind === "meal" && s.mealId) void removeMealSafe(s.mealId);
           }}
           onClose={() => setProteinOpen(false)}
+        />
+      )}
+
+      {sugarOpen && (
+        <IntakeDetail
+          title="Sucre du jour"
+          icon={Candy}
+          emptyHint="Aucun sucre enregistré. Ajoute-le au fur et à mesure (ou via tes repas)."
+          labelPlaceholder="Libellé (ex. soda)"
+          defaultAmount={10}
+          sources={sugarSources}
+          total={sugarTotal}
+          target={undefined}
+          frequent={frequentSugars}
+          onAdd={(g, label) => void addSugar(g, label)}
+          onRemove={(s) => {
+            if (s.kind === "entry" && s.entryIndex != null) void removeSugar(s.entryIndex);
+            else if (s.kind === "meal" && s.mealId) void removeMealSafe(s.mealId);
+          }}
+          onClose={() => setSugarOpen(false)}
         />
       )}
     </div>
